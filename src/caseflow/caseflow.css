@@ -1,0 +1,159 @@
+.cf-page {
+  min-height: 100vh;
+  background: #f4f6f9;
+}
+
+.cf-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 18px;
+  background: #ffffff;
+  border-bottom: 1px solid #cfd7e3;
+}
+
+.cf-headerLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cf-title {
+  font-size: 18px;
+  font-weight: 950;
+  color: #0f2f52;
+}
+
+.cf-subtitle {
+  font-size: 13px;
+  font-weight: 800;
+  color: #334155;
+}
+
+.cf-headerRight {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.cf-caseBadge,
+.cf-workflowBadge {
+  border: 1px solid #d1dbe8;
+  background: #ffffff;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-weight: 900;
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.cf-caseId,
+.cf-workflowText {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 900;
+}
+
+.cf-grid {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 14px;
+  padding: 18px;
+}
+
+.cf-steps {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.cf-step {
+  text-align: left;
+  border-radius: 16px;
+  border: 1px solid #d1dbe8;
+  background: #ffffff;
+  padding: 12px 12px;
+  cursor: pointer;
+}
+
+.cf-step[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.cf-step.active {
+  border-color: #163a63;
+  box-shadow: 0 0 0 2px rgba(22, 58, 99, 0.15);
+}
+
+.cf-stepRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cf-stepIndex {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 950;
+  color: #0f172a;
+  font-size: 12px;
+}
+
+.cf-stepTitle {
+  font-weight: 950;
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.cf-stepReq {
+  font-size: 11px;
+  font-weight: 950;
+  color: #163a63;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.cf-stepHint {
+  margin-top: 6px;
+  color: #334155;
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.cf-stepActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cf-linkBtn {
+  border: 1px solid #d1dbe8;
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 950;
+  border-radius: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.cf-content {
+  display: grid;
+  gap: 14px;
+}
+
+@media (max-width: 980px) {
+  .cf-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
