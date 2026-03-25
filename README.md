@@ -2,7 +2,40 @@
 
 **Repository:** [github.com/CanDuru4/CIS4120-HW5](https://github.com/CanDuru4/CIS4120-HW5)
 
-Single React app (Vite + React + TypeScript + React Router). **Port 5173** exposes one route per requirement (`/req/1` … `/req/11`). **Port 5174** runs the same shared `localStorage` case model in one linear **case-flow** stepper (upload covers Req 3–4 together; parse through workflow mirrors Req 5–10; embedded role dashboard for Req 11). **Port 5175** is a **full-width modern** skin: role picker, **role-split hub** (analyst grid vs lead/CEO Kanban with a shared review pipeline), **`/caseflow`** as a **single-page customs workspace** (declaration + upload or **PDF preview** with an upload toggle, parse/extract, editable declaration fields with evidence, **Send Files**, and **Validation status** with a **collapsible Requirement 7** block showing per-field declaration vs supporting values and match scores). **Main product path:** `/` → `/hub` → **Create case** → `/caseflow`. **`/req/1`–`/req/11`** are **Lab / grading only** (collapsible strip on the hub, bookmarkable **`/lab`**, product-style shell titles + “Lab prototype” banner). **Same stores and validation rules** as 5173/5174 where steps overlap.
+This is one **Vite + React + TypeScript + React Router** codebase with **three ways to run it** (three ports). All builds share the same **case model** and **dashboard queue** in `localStorage` where those features exist, so work done in one server is visible in the others after a refresh.
+
+## Three dev servers: 5173, 5174, and 5175
+
+| Port | Command | Entry | Open |
+|------|---------|-------|------|
+| **5173** | `npm run dev` | [`src/main.tsx`](src/main.tsx) → [`App.tsx`](src/App.tsx) | [http://localhost:5173](http://localhost:5173) (redirects to `/req/1`) |
+| **5174** | `npm run dev:5174` | [`src/main.caseflow.tsx`](src/main.caseflow.tsx) → [`CaseFlowApp.tsx`](src/CaseFlowApp.tsx) | [http://localhost:5174](http://localhost:5174) |
+| **5175** | `npm run dev:5175` | [`src/main.neo.tsx`](src/main.neo.tsx) → [`NeoApp.tsx`](src/neo/NeoApp.tsx) | [http://localhost:5175](http://localhost:5175) |
+
+The browser entry script is chosen in [`index.html`](index.html) from `window.location.port`: **`5174`** → case-flow, **`5175`** → neo, **anything else** (including default **5173**) → requirement lab.
+
+### Port 5173 — requirement lab (default)
+
+- **Purpose:** One bookmarkable URL per homework requirement: **`/req/1`** through **`/req/11`**.
+- **UI:** Single-page list of requirement links at the app root, then each `/req/*` page in isolation (classic “grading” layout).
+- **Best for:** Checking off Req 1–11 individually, screenshots, and matching the write-up to a specific route.
+
+### Port 5174 — integrated case-flow stepper
+
+- **Purpose:** One **linear stepper** that walks through the same prototype flow in order (e.g. hello → styles → **upload** (Reqs 3–4 combined) → **parse** → compare → tolerant match → evidence → validation → workflow → **embedded role dashboard** for Req 11).
+- **UI:** [`CaseFlowPage.tsx`](src/caseflow/CaseFlowPage.tsx) and shared step components under [`src/caseflow/`](src/caseflow/); navigation is step-by-step, not the neo hub.
+- **State:** Reads/writes **`hw5_prototype_case_store_v1`** and **`hw5_dashboard_queue_v1`** like the lab pages.
+- **Best for:** Demonstrating the **end-to-end case** in homework order without the 5175 product chrome.
+
+### Port 5175 — modern “product” shell (neo)
+
+- **Purpose:** A **full-width** UI closer to a shipping app: role selection, hub, and Kanban, with the **customs journey** on **`/caseflow`** as a **single-page workspace** (not the 5174 sidebar stepper).
+- **Main path:** **`/`** (role: Case Analyst / Lead Reviewer / CEO) → **`/hub`** → **Create case** → **`/caseflow`**.
+- **Hub:** Case Analyst sees a **dashboard-style grid**; Lead Reviewer and CEO see the **workflow Kanban** (shared pipeline for review vs executive queue). **View as** role switcher stays in sync with queue filters.
+- **`/caseflow`:** Declaration panel, **upload** or **PDF preview** (toggle back to upload), case file strip, **extract & parse**, editable declaration fields + evidence, **Send Files**, **Validation status**, and a **collapsible Requirement 7** section (per-field declaration vs supporting values and **match scores**).
+- **Lab routes:** **`/req/1`–`/req/11`** still exist but are framed as **Lab / grading** (banner + titles from [`neoLabReqMeta.ts`](src/neo/neoLabReqMeta.ts)); reach them from the hub footer or **`/lab`**.
+- **Extra state:** Selected hub role is stored in **`sessionStorage`** (`hw5_neo_role_v1`).
+- **Best for:** Course demo, UI critique, and showing how the same logic as 5173/5174 looks in a cohesive product layout.
 
 ## Prerequisites
 
@@ -14,37 +47,21 @@ Single React app (Vite + React + TypeScript + React Router). **Port 5173** expos
 npm install
 ```
 
-**Requirement pages (default dev server):**
+Then start **one** of the servers from [Three dev servers](#three-dev-servers-5173-5174-and-5175) above (`npm run dev`, `npm run dev:5174`, or `npm run dev:5175`).
 
-```bash
-npm run dev
-```
+### 5175-only routes (quick reference)
 
-Open `http://localhost:5173/` (root redirects to `/req/1`).
-
-**Integrated case flow (alternate entry — same repo, different port):**
-
-```bash
-npm run dev:5174
-```
-
-Open `http://localhost:5174/`. Vite picks `src/main.caseflow.tsx` when the port is `5174` (see `index.html`).
-
-**Modern UI shell — full router + case flow (port 5175):**
-
-```bash
-npm run dev:5175
-```
-
-Open `http://localhost:5175/`. Entry: `src/main.neo.tsx`. Routes:
+These exist on **`http://localhost:5175`** ([`NeoApp.tsx`](src/neo/NeoApp.tsx)):
 
 | Path | Purpose |
 |------|---------|
 | `/` | Select role (Case Analyst / Lead / CEO); stored in `sessionStorage` (`hw5_neo_role_v1`) |
-| `/hub` | **Case Analyst:** upper dashboard grid (open cases, activity, upload teaser, Create case). **Lead / CEO:** workflow Kanban only. Footer **Lab** (collapsed by default): numbered links to `/req/1`–`/req/11`; link to **Open full lab page**. |
-| `/lab` | Full **grading lab** page with the same 1–11 links (bookmarkable). Not part of the main customs workflow. |
-| `/caseflow` | **5175:** Single-page customs workspace (see intro). **5174:** Linear case-flow stepper (upload through validation; shared `localStorage` case model). |
-| `/req/1` … `/req/11` | Same pages as 5173; **5175** wraps them with **Lab prototype** banner and product titles from [`neoLabReqMeta.ts`](src/neo/neoLabReqMeta.ts). Reach only via **Lab** or **`/lab`**. |
+| `/hub` | **Case Analyst:** dashboard grid + **Create case**. **Lead / CEO:** Kanban. Footer **Lab** (collapsed): links to `/req/1`–`/req/11` and **`/lab`**. |
+| `/lab` | Full lab index (bookmarkable); same requirement links as the hub footer. |
+| `/caseflow` | Single-page customs workspace (neo). |
+| `/req/1` … `/req/11` | Same underlying pages as 5173, wrapped with **Lab prototype** chrome on 5175 only. |
+
+On **5174**, **`/caseflow`** is not used the same way: the integrated flow is the **stepper** at `/` inside `CaseFlowApp`. On **5173**, use **`/req/*`** only (no hub or neo `/caseflow`).
 
 **Sample PDFs** (optional, for local demos):
 
@@ -149,4 +166,4 @@ npm run preview   # optional production preview
 
 ## AI-generated code — attribution
 
-**What was AI-assisted:** Large parts of this codebase were **written, refactored, or debugged with AI coding assistants** (e.g. **Cursor** with integrated LLMs, and similar tools). That includes UI flows, state wiring (`caseStore`, dashboard queue), the port-**5174** case-flow shell and step components, the port-**5175** modern layout (`src/neo/*`, shared `useCaseFlowController`), PDF/sample-data utilities, and README maintenance. The team **reviews, runs, and tests** the app locally for accuracy and requirements.
+**What was AI-assisted:** Large parts of this codebase were **written, refactored, or debugged with AI coding assistants** (e.g. **Cursor** with integrated LLMs, and similar tools). That includes UI flows, state wiring (`caseStore`, dashboard queue), the **5173** requirement pages and router, the **5174** case-flow shell and step components, the **5175** neo layout (`src/neo/*`, shared `useCaseFlowController`), PDF/sample-data utilities, and README maintenance. The team **reviews, runs, and tests** the app locally for accuracy and requirements.
