@@ -4,9 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "vite",
-    "dev:5174": "vite --port 5174 --strictPort",
-    "dev:5175": "vite --port 5175 --strictPort",
+    "dev": "vite --port 5176 --strictPort",
+    "dev:5176": "vite --port 5176 --strictPort",
     "generate-sample-pdfs": "node scripts/generateSamplePdfs.js",
     "build": "tsc -b && vite build",
     "preview": "vite preview",

@@ -8,13 +8,8 @@
   <body>
     <div id="root"></div>
     <script type="module">
-      // Multi-target setup:
-      // - port 5173 (default): requirement routes
-      // - port 5174: case-flow stepper
-      // - port 5175: neo-brutalist full app (routes + /caseflow)
-      const port = window.location.port;
-      const entry =
-        port === '5174' ? '/src/main.caseflow.tsx' : port === '5175' ? '/src/main.neo.tsx' : '/src/main.tsx';
+      // Single target setup (port 5176)
+      const entry = '/src/main.5176.tsx';
       import(/* @vite-ignore */ entry);
     </script>
   </body>
