@@ -1,1240 +1,2321 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import './port5176.css';
+import { SEED_USERS, SEED_CASES } from './seedData';
 
-type Role = 'Analyst' | 'Reviewer';
-type CaseStatus = 'Draft' | 'Ready for Review' | 'Returned for Changes' | 'Ready to Submit' | 'Submitted';
-type DashboardRole = 'Case Reviewer' | 'Lead Reviewer' | 'CEO';
+// ============== TYPE DEFINITIONS ==============
 
-type CaseItem = {
+type Role = 'writer' | 'lead_reviewer' | 'ceo';
+type CaseStatus = 'drafting' | 'missing_ev' | 'ready_review' | 'returned' | 'completed';
+
+type User = {
+  email: string;
+  role: Role;
+  company: string;
+  name: string;
+};
+
+type Notification = {
   id: string;
-  status: CaseStatus;
-  createdBy: Role;
+  message: string;
+  caseId: string;
+  timestamp: Date;
+  read: boolean;
 };
 
-type DeclarantFields = {
-  companyName: string;
-  grossWeight: string;
-  invoiceNumber: string;
-  itemDescription: string;
-  quantity: string;
-};
+type DeclarantField =
+  | 'hsCode'
+  | 'originCountry'
+  | 'destCountry'
+  | 'invoiceAmount'
+  | 'netWeight'
+  | 'grossWeight'
+  | 'exitCustoms'
+  | 'iban'
+  | 'others';
+
+type DocumentType = 'invoice' | 'packageList' | 'atr' | 'insurance';
 
 type EvidenceLink = {
-  field: keyof DeclarantFields;
-  documentName: string;
+  field: DeclarantField;
+  docType: DocumentType;
   region: string;
-  evidenceValue: string;
-  targetId?: string;
-};
-
-type EvidenceTarget = {
-  id: string;
-  docName: string;
-  label: string;
   value: string;
-  xPct: number;
-  yPct: number;
-  sizePct: number;
+  status: 'linked' | 'conflict' | 'stale';
 };
 
-type VisualLink = {
-  field: keyof DeclarantFields;
-  targetId: string;
-  docName: string;
-};
-
-type StoredDoc = {
+type UploadedDoc = {
   name: string;
-  mimeType: string;
+  docType: DocumentType;
   dataUrl: string;
 };
 
-type CaseProfile = {
-  fields: DeclarantFields;
-  uploadMode: 'separate' | 'combined';
-  separateDocs: StoredDoc[];
-  combinedDoc: StoredDoc | null;
-  docTargets: Record<string, EvidenceTarget[]>;
-  comments: string[];
-  notifications: string[];
-  evidenceLinks: EvidenceLink[];
-  visualLinks: VisualLink[];
+type DocumentRegion = {
+  id: string;
+  docType: DocumentType;
+  x: number;
+  y: number;
 };
 
-const reqTabs = [
-  'Req 1', 'Req 2', 'Req 3', 'Req 4', 'Req 5', 'Req 6', 'Req 7', 'Req 8', 'Req 9', 'Req 10',
-];
-const CASE_REQUIRED_REQS = new Set(['Req 4', 'Req 5', 'Req 6', 'Req 7', 'Req 8', 'Req 9', 'Req 10']);
-
-const reqMeta: Record<string, { title: string; hint: string }> = {
-  'Req 1': { title: 'Hello world app', hint: 'Verify app boot on the target runtime and show the base screen.' },
-  'Req 2': { title: 'Hello styles', hint: 'Show style tokens: typography, colors, icons, badges, and buttons.' },
-  'Req 3': { title: 'Role dashboard', hint: 'Organize cases by status and switch role-specific actions.' },
-  'Req 4': { title: 'Manual declarant entry', hint: 'Create/open a case and manually fill fixed declarant fields.' },
-  'Req 5': { title: 'Multi-file upload', hint: 'Upload at least 3 PDFs and switch across document tabs.' },
-  'Req 6': { title: 'Evidence linking', hint: 'Link one declarant field to a region/value from an active PDF.' },
-  'Req 7': { title: 'Send-file validation', hint: 'Show missing value/link and mismatch checks before send.' },
-  'Req 8': { title: 'Review matrix', hint: 'Display fields x document types and per-cell state.' },
-  'Req 9': { title: 'Field inspection', hint: 'Open focused detail view with linked evidence context.' },
-  'Req 10': { title: 'Routing and realtime', hint: 'Route cases between roles, comments, and notifications.' },
+type Case = {
+  id: string;
+  title: string;
+  createdBy: string;
+  createdAt: Date;
+  status: CaseStatus;
+  fields: Record<DeclarantField, string>;
+  docs: UploadedDoc[];
+  links: EvidenceLink[];
+  regions: DocumentRegion[];
+  comments: Array<{ author: string; text: string; timestamp: Date }>;
 };
 
-const fieldLabels: Record<keyof DeclarantFields, string> = {
-  companyName: 'Company Name',
-  grossWeight: 'Gross Weight',
-  invoiceNumber: 'Invoice Number',
-  itemDescription: 'Item Description',
-  quantity: 'Quantity',
+type AppState = {
+  user: User | null;
+  cases: Case[];
+  notifications: Notification[];
 };
 
-const defaultFields: DeclarantFields = {
-  companyName: '',
-  grossWeight: '',
-  invoiceNumber: '',
-  itemDescription: '',
-  quantity: '',
-};
+type View = 'login' | 'signup' | 'dashboard' | 'editor' | 'matrix';
 
-function makeProfile(caseId: string): CaseProfile {
-  return {
-    fields: {
-      ...defaultFields,
-    },
-    uploadMode: 'separate',
-    separateDocs: [],
-    combinedDoc: null,
-    docTargets: {},
-    comments: [],
-    notifications: [`${caseId} created in Draft. Add declarant values and upload files.`],
-    evidenceLinks: [],
-    visualLinks: [],
-  };
-}
-
-const APP_STORAGE_KEY = 'hw5_port5176_state_v1';
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ''));
-    reader.onerror = () => reject(new Error('Failed to read file'));
-    reader.readAsDataURL(file);
-  });
-}
-
-const declarantOrder: Array<keyof DeclarantFields> = ['companyName', 'invoiceNumber', 'itemDescription', 'quantity', 'grossWeight'];
+// ============== MAIN APP COMPONENT ==============
 
 export default function Port5176App() {
-  const saved =
-    typeof window !== 'undefined' ? (JSON.parse(window.localStorage.getItem(APP_STORAGE_KEY) ?? 'null') as null | {
-      cases: CaseItem[];
-      caseProfiles: Record<string, CaseProfile>;
-      selectedCase: string;
-    }) : null;
-  const [activeReq, setActiveReq] = useState('Req 1');
-  const [role] = useState<Role>('Analyst');
-  const [dashboardRole, setDashboardRole] = useState<DashboardRole>('Case Reviewer');
-  const defaultCases: CaseItem[] = [
-    { id: 'CASE-101', status: 'Draft', createdBy: 'Analyst' },
-    { id: 'CASE-102', status: 'Ready for Review', createdBy: 'Analyst' },
-    { id: 'CASE-103', status: 'Returned for Changes', createdBy: 'Reviewer' },
-  ];
-  const defaultProfiles: Record<string, CaseProfile> = {
-    'CASE-101': makeProfile('CASE-101'),
-    'CASE-102': makeProfile('CASE-102'),
-    'CASE-103': makeProfile('CASE-103'),
-  };
-  const [cases, setCases] = useState<CaseItem[]>(saved?.cases ?? defaultCases);
-  const [caseProfiles, setCaseProfiles] = useState<Record<string, CaseProfile>>(saved?.caseProfiles ?? defaultProfiles);
-  const [selectedCase, setSelectedCase] = useState<string>('');
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [fields, setFields] = useState<DeclarantFields>(defaultFields);
-  const [uploadMode, setUploadMode] = useState<'separate' | 'combined'>('separate');
-  const [activeDocIndex, setActiveDocIndex] = useState(0);
-  const [sendModalOpen, setSendModalOpen] = useState(false);
-  const [allowSendWithExplanation, setAllowSendWithExplanation] = useState(false);
-  const [sendExplanation, setSendExplanation] = useState('');
-  const [selectedField, setSelectedField] = useState<keyof DeclarantFields>('companyName');
-  const [selectedTargetId, setSelectedTargetId] = useState<string>('');
-  const [docTargets, setDocTargets] = useState<Record<string, EvidenceTarget[]>>({});
-  const [isPlacingRegion, setIsPlacingRegion] = useState(false);
-  const [regionSizePct, setRegionSizePct] = useState(8);
-  const [placingPoint, setPlacingPoint] = useState<{ xPct: number; yPct: number } | null>(null);
-  const [draggingField, setDraggingField] = useState<keyof DeclarantFields | null>(null);
-  const [dragPoint, setDragPoint] = useState<{ x: number; y: number } | null>(null);
-  const [linkRenderTick, setLinkRenderTick] = useState(0);
-  const [visualLinks, setVisualLinks] = useState<VisualLink[]>([]);
-  const [links, setLinks] = useState<EvidenceLink[]>([]);
-  const [modalField, setModalField] = useState<keyof DeclarantFields | null>(null);
-  const [comments, setComments] = useState<string[]>(['Reviewer: Please add supporting link for invoice number.']);
-  const [newComment, setNewComment] = useState('');
-  const [notifications, setNotifications] = useState<string[]>(['Case CASE-102 moved to Ready for Review.']);
+  const [view, setView] = useState<View>('login');
+  const [user, setUser] = useState<User | null>(null);
+  const [cases, setCases] = useState<Case[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
+  const [matrixCaseId, setMatrixCaseId] = useState<string | null>(null);
+  const [inspectingCell, setInspectingCell] = useState<{ field: DeclarantField; docType: DocumentType } | null>(null);
+  const [showReturnModal, setShowReturnModal] = useState(false);
 
-  const selectedCaseObj = cases.find((c) => c.id === selectedCase);
-  const selectedProfile = caseProfiles[selectedCase];
-  const separateDocs = selectedProfile?.separateDocs ?? [];
-  const combinedDoc = selectedProfile?.combinedDoc ?? null;
-  const displayDocNames = uploadMode === 'separate' ? separateDocs.map((d) => d.name) : combinedDoc ? [combinedDoc.name] : [];
-  const req6Docs = uploadMode === 'combined' ? (combinedDoc ? [combinedDoc] : []) : separateDocs;
-  const req6DocNames = req6Docs.map((d) => d.name);
-  const req6ActiveDoc = req6Docs[activeDocIndex] ?? null;
-  const req6ActiveDocName = req6ActiveDoc?.name ?? req6DocNames[0] ?? '';
-  const req6PdfUrl = req6ActiveDoc?.dataUrl ?? null;
-  const modalActiveLink = modalField ? links.find((l) => l.field === modalField) : null;
-  const modalPdfDoc = modalActiveLink ? [...separateDocs, ...(combinedDoc ? [combinedDoc] : [])].find((d) => d.name === modalActiveLink.documentName) : null;
-  const modalPdfUrl = modalPdfDoc?.dataUrl ?? null;
-  const modalTarget = modalActiveLink
-    ? (docTargets[modalActiveLink.documentName] ?? []).find((t) =>
-        modalActiveLink.targetId ? t.id === modalActiveLink.targetId : t.label === modalActiveLink.region,
-      )
-    : null;
-
-  const matrixRows = (Object.keys(fieldLabels) as Array<keyof DeclarantFields>).map((field) => {
-    return displayDocNames.slice(0, 3).map((docName) => {
-      const linked = links.find((l) => l.field === field && l.documentName === docName);
-      if (!linked) return 'not-linked';
-      if (fields[field] && linked.evidenceValue && fields[field].trim() !== linked.evidenceValue.trim()) return 'conflict';
-      return 'linked';
-    });
-  });
-
-  const validationIssues = useMemo(() => {
-    const issues: string[] = [];
-    (Object.keys(fieldLabels) as Array<keyof DeclarantFields>).forEach((field) => {
-      if (!fields[field].trim()) issues.push(`${fieldLabels[field]} is missing.`);
-      if (!links.some((l) => l.field === field)) issues.push(`${fieldLabels[field]} has no evidence link.`);
-      const mismatch = links.find((l) => l.field === field && fields[field].trim() && l.evidenceValue.trim() !== fields[field].trim());
-      if (mismatch) issues.push(`${fieldLabels[field]} mismatches linked evidence in ${mismatch.documentName}.`);
-    });
-    return issues;
-  }, [fields, links]);
-  const completedFieldCount = (Object.keys(fieldLabels) as Array<keyof DeclarantFields>).filter(
-    (field) => fields[field].trim().length > 0,
-  ).length;
-  const linkedFieldCount = (Object.keys(fieldLabels) as Array<keyof DeclarantFields>).filter((field) =>
-    links.some((l) => l.field === field),
-  ).length;
-  const activeDocument = uploadMode === 'combined' ? combinedDoc : separateDocs[activeDocIndex];
-  const activePdfUrl = activeDocument?.dataUrl ?? null;
-  const visibleTargets = useMemo(() => (req6ActiveDocName ? docTargets[req6ActiveDocName] ?? [] : []), [req6ActiveDocName, docTargets]);
-  const linkingCanvasRef = useRef<HTMLDivElement | null>(null);
-  const fieldRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const targetRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const selectedCaseRef = useRef<string>(selectedCase);
-
+  // Seed users and cases on first load
   useEffect(() => {
-    if (activeDocIndex >= req6Docs.length) {
-      setActiveDocIndex(0);
-    }
-  }, [activeDocIndex, req6Docs.length]);
-
-  useLayoutEffect(() => {
-    setLinkRenderTick((t) => t + 1);
-  }, [req6ActiveDocName, visibleTargets.length, selectedCase]);
-
-  function switchUploadMode(mode: 'separate' | 'combined') {
-    setUploadMode(mode);
-    setActiveDocIndex(0);
-    setCaseProfiles((prev) => {
-      const existing = prev[selectedCase] ?? makeProfile(selectedCase);
-      if (mode === 'separate') {
-        return { ...prev, [selectedCase]: { ...existing, uploadMode: mode, combinedDoc: null } };
-      }
-      return { ...prev, [selectedCase]: { ...existing, uploadMode: mode, separateDocs: [] } };
-    });
-  }
-
-  async function handleFilesChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const chosen = Array.from(event.target.files ?? []);
-    const converted: StoredDoc[] = await Promise.all(
-      chosen.map(async (file) => ({
-        name: file.name,
-        mimeType: file.type || 'application/pdf',
-        dataUrl: await fileToDataUrl(file),
-      })),
-    );
-    setCaseProfiles((prev) => {
-      const existing = prev[selectedCase] ?? makeProfile(selectedCase);
-      return { ...prev, [selectedCase]: { ...existing, uploadMode: 'separate', separateDocs: converted, combinedDoc: null } };
-    });
-    setUploadMode('separate');
-    setActiveDocIndex(0);
-  }
-
-  async function handleCombinedFileChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const chosen = event.target.files?.[0] ?? null;
-    if (!chosen) return;
-    const converted: StoredDoc = {
-      name: chosen.name,
-      mimeType: chosen.type || 'application/pdf',
-      dataUrl: await fileToDataUrl(chosen),
-    };
-    setCaseProfiles((prev) => {
-      const existing = prev[selectedCase] ?? makeProfile(selectedCase);
-      return { ...prev, [selectedCase]: { ...existing, uploadMode: 'combined', combinedDoc: converted, separateDocs: [] } };
-    });
-    setUploadMode('combined');
-    setActiveDocIndex(0);
-  }
-
-  function createLinkFromTarget(field: keyof DeclarantFields, targetId: string) {
-    const target = visibleTargets.find((t) => t.id === targetId);
-    if (!target || !target.docName) return;
-    setVisualLinks((prev) => [...prev.filter((l) => l.field !== field), { field, targetId, docName: target.docName }]);
-    setLinks((prev) => [
-      ...prev.filter((l) => l.field !== field),
-      { field, documentName: target.docName, region: target.label, evidenceValue: target.value, targetId: target.id },
-    ]);
-  }
-
-  function addRegionMarkerAt(xPct: number, yPct: number) {
-    if (!req6ActiveDocName || !Number.isFinite(xPct) || !Number.isFinite(yPct)) return;
-    setDocTargets((prev) => {
-      const existing = prev[req6ActiveDocName] ?? [];
-      const next: EvidenceTarget = {
-        id: `region-${Date.now()}`,
-        docName: req6ActiveDocName,
-        label: `Region ${existing.length + 1}`,
-        value: 'Manual region selection',
-        xPct,
-        yPct,
-        sizePct: regionSizePct,
-      };
-      setSelectedTargetId(next.id);
-      return {
-        ...prev,
-        [req6ActiveDocName]: [...existing, next],
-      };
-    });
-    setIsPlacingRegion(false);
-    setPlacingPoint(null);
-  }
-
-  function updateSelectedRegionSize(sizePct: number) {
-    if (!req6ActiveDocName || !selectedTargetId) return;
-    setDocTargets((prev) => ({
-      ...prev,
-      [req6ActiveDocName]: (prev[req6ActiveDocName] ?? []).map((t) => (t.id === selectedTargetId ? { ...t, sizePct } : t)),
-    }));
-  }
-
-  function deleteSelectedRegion() {
-    if (!req6ActiveDocName || !selectedTargetId) return;
-    const target = (docTargets[req6ActiveDocName] ?? []).find((t) => t.id === selectedTargetId);
-    setDocTargets((prev) => ({
-      ...prev,
-      [req6ActiveDocName]: (prev[req6ActiveDocName] ?? []).filter((t) => t.id !== selectedTargetId),
-    }));
-    if (target) {
-      setLinks((prev) =>
-        prev.filter((l) => !(l.documentName === req6ActiveDocName && (l.targetId ? l.targetId === selectedTargetId : l.region === target.label))),
-      );
-    }
-    setVisualLinks((prev) => prev.filter((v) => v.targetId !== selectedTargetId));
-    setSelectedTargetId('');
-  }
-
-  function createCaseFromDashboard() {
-    const id = `CASE-${100 + cases.length + 1}`;
-    const next: CaseItem = { id, status: 'Draft', createdBy: role };
-    setCases((prev) => [...prev, next]);
-    setCaseProfiles((prev) => ({ ...prev, [id]: makeProfile(id) }));
-    setSelectedCase(id);
-    setToastMessage(`Active case changed to ${id}`);
-  }
-
-  function activateCase(caseId: string) {
-    setSelectedCase(caseId);
-    setToastMessage(`Active case changed to ${caseId}`);
-  }
-
-  function resetActiveCase() {
-    if (!selectedCase) return;
-    const caseId = selectedCase;
-    // Deactivate current case first so no persisted case data is overwritten.
-    setSelectedCase('');
-    // Clear only in-memory tab state; stored case profile remains intact.
-    setFields(defaultFields);
-    setLinks([]);
-    setVisualLinks([]);
-    setDocTargets({});
-    setComments([]);
-    setNotifications([]);
-    setUploadMode('separate');
-    setActiveDocIndex(0);
-    setToastMessage(`${caseId} deactivated. Case data is preserved.`);
-  }
-
-  function startFieldDrag(field: keyof DeclarantFields, event: React.MouseEvent) {
-    if (!linkingCanvasRef.current) return;
-    const bounds = linkingCanvasRef.current.getBoundingClientRect();
-    setSelectedField(field);
-    setDraggingField(field);
-    setDragPoint({ x: event.clientX - bounds.left, y: event.clientY - bounds.top });
-  }
-
-  function updateDrag(event: React.MouseEvent) {
-    if (!draggingField || !linkingCanvasRef.current) return;
-    const bounds = linkingCanvasRef.current.getBoundingClientRect();
-    setDragPoint({ x: event.clientX - bounds.left, y: event.clientY - bounds.top });
-  }
-
-  function finishDrag(event: React.MouseEvent) {
-    if (!draggingField) return;
-    const node = (event.target as HTMLElement).closest('[data-target-id]') as HTMLElement | null;
-    if (node) {
-      const targetId = node.dataset.targetId;
-      if (targetId) createLinkFromTarget(draggingField, targetId);
-    }
-    setDraggingField(null);
-    setDragPoint(null);
-  }
-
-  function routeCase(next: CaseStatus) {
-    if (!selectedCaseObj) return;
-    setCases((prev) => prev.map((c) => (c.id === selectedCaseObj.id ? { ...c, status: next } : c)));
-    setNotifications((prev) => [`${selectedCaseObj.id} routed to ${next}.`, ...prev]);
-    setToastMessage(`${selectedCaseObj.id} moved to ${next}`);
-  }
-
-  function sendComment() {
-    if (!newComment.trim()) return;
-    const entry = `${role}: ${newComment.trim()}`;
-    setComments((prev) => [entry, ...prev]);
-    setNotifications((prev) => [`New comment on ${selectedCase}.`, ...prev]);
-    setCaseProfiles((prev) => {
-      const existing = prev[selectedCase] ?? makeProfile(selectedCase);
-      return {
-        ...prev,
-        [selectedCase]: {
-          ...existing,
-          comments: [entry, ...(existing.comments ?? [])],
-          notifications: [`New comment on ${selectedCase}.`, ...(existing.notifications ?? [])],
-        },
-      };
-    });
-    setNewComment('');
-  }
-
-  function confirmSendFiles() {
-    const hasIssues = validationIssues.length > 0;
-    if (hasIssues) {
-      if (!allowSendWithExplanation || !sendExplanation.trim()) return;
-      setNotifications((prev) => [`Send override used for ${selectedCase}: ${sendExplanation.trim()}`, ...prev]);
-    }
-    if (selectedCaseObj) {
-      setCases((prev) => prev.map((c) => (c.id === selectedCaseObj.id ? { ...c, status: 'Ready for Review' } : c)));
-      setNotifications((prev) => [`${selectedCaseObj.id} submitted to Lead Reviewer (Ready for Review).`, ...prev]);
-      setToastMessage(`${selectedCaseObj.id} submitted to Lead Reviewer`);
-      setCaseProfiles((prev) => {
-        const reset = makeProfile(selectedCaseObj.id);
-        return {
-          ...prev,
-          [selectedCaseObj.id]: {
-            ...reset,
-            notifications: [`${selectedCaseObj.id} submitted to Lead Reviewer (Ready for Review).`],
-          },
-        };
-      });
-      setFields(defaultFields);
-      setLinks([]);
-      setVisualLinks([]);
-      setDocTargets({});
-      setComments([]);
-    }
-    setSendModalOpen(false);
-    setAllowSendWithExplanation(false);
-    setSendExplanation('');
-  }
-
-  useEffect(() => {
-    if (!selectedProfile) return;
-    setFields(selectedProfile.fields);
-    setComments(selectedProfile.comments);
-    setNotifications(selectedProfile.notifications);
-    setLinks(selectedProfile.evidenceLinks ?? []);
-    setVisualLinks(selectedProfile.visualLinks ?? []);
-    setDocTargets(selectedProfile.docTargets ?? {});
-    setUploadMode(selectedProfile.uploadMode ?? 'separate');
-    setActiveDocIndex(0);
-  }, [selectedCase]);
-
-  useEffect(() => {
-    if (!selectedCase) return;
-    setCaseProfiles((prev) => {
-      const existing = prev[selectedCase] ?? makeProfile(selectedCase);
-      return {
-        ...prev,
-        [selectedCase]: { ...existing, fields, comments, notifications, uploadMode, evidenceLinks: links, visualLinks, docTargets },
-      };
-    });
-  }, [selectedCase, fields, comments, notifications, uploadMode, links, visualLinks, docTargets]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(
-      APP_STORAGE_KEY,
-      JSON.stringify({
-        cases,
-        caseProfiles,
-        selectedCase,
-      }),
-    );
-  }, [cases, caseProfiles, selectedCase]);
-
-  useEffect(() => {
-    selectedCaseRef.current = selectedCase;
-  }, [selectedCase]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const onStorage = (event: StorageEvent) => {
-      if (event.key !== APP_STORAGE_KEY || !event.newValue) return;
-      try {
-        const parsed = JSON.parse(event.newValue) as {
-          cases: CaseItem[];
-          caseProfiles: Record<string, CaseProfile>;
-          selectedCase: string;
-        };
-        setCases(parsed.cases);
-        setCaseProfiles(parsed.caseProfiles);
-        const currentCaseId = selectedCaseRef.current;
-        const nextCaseId = parsed.caseProfiles[currentCaseId] ? currentCaseId : parsed.selectedCase;
-        const nextProfile = parsed.caseProfiles[nextCaseId];
-        setSelectedCase(nextCaseId);
-        if (nextProfile) {
-          setFields(nextProfile.fields);
-          setComments(nextProfile.comments);
-          setNotifications(nextProfile.notifications);
-          setLinks(nextProfile.evidenceLinks ?? []);
-          setVisualLinks(nextProfile.visualLinks ?? []);
-          setDocTargets(nextProfile.docTargets ?? {});
-          setUploadMode(nextProfile.uploadMode ?? 'separate');
-          setActiveDocIndex(0);
+    const seeded = localStorage.getItem('seedApplied_v1');
+    if (!seeded) {
+      // Seed the 3 test users
+      const existingUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]') as Array<User & { password: string }>;
+      const merged = [...existingUsers];
+      for (const su of SEED_USERS) {
+        if (!merged.some(u => u.email === su.email)) {
+          merged.push(su);
         }
-      } catch {
-        // ignore invalid storage payloads
       }
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
+      localStorage.setItem('registeredUsers', JSON.stringify(merged));
+      // Seed cases (cast to correct types)
+      setCases(SEED_CASES as unknown as Case[]);
+      localStorage.setItem('seedApplied_v1', '1');
+    }
   }, []);
 
+  // Load state from localStorage on mount
   useEffect(() => {
-    if (!toastMessage) return;
-    const t = window.setTimeout(() => setToastMessage(null), 2200);
-    return () => window.clearTimeout(t);
-  }, [toastMessage]);
-
-  useEffect(() => {
-    if (!selectedCase && CASE_REQUIRED_REQS.has(activeReq)) {
-      setActiveReq('Req 1');
+    const savedState = localStorage.getItem('customsCaseManager');
+    if (savedState) {
+      try {
+        const parsed = JSON.parse(savedState) as AppState;
+        if (parsed.user) {
+          setUser(parsed.user);
+          setView('dashboard');
+        }
+        if (parsed.cases && parsed.cases.length > 0) {
+          setCases(parsed.cases.map(c => ({
+            ...c,
+            createdAt: new Date(c.createdAt),
+            regions: c.regions || [],
+            comments: c.comments.map(comment => ({
+              ...comment,
+              timestamp: new Date(comment.timestamp)
+            }))
+          })));
+        }
+        if (parsed.notifications) {
+          setNotifications(parsed.notifications.map(n => ({
+            ...n,
+            timestamp: new Date(n.timestamp)
+          })));
+        }
+      } catch {
+        // Failed to parse saved state - start fresh
+      }
     }
-  }, [selectedCase, activeReq]);
+  }, []);
+
+  // Save state to localStorage whenever it changes
+  useEffect(() => {
+    const state: AppState = { user, cases, notifications };
+    localStorage.setItem('customsCaseManager', JSON.stringify(state));
+  }, [user, cases, notifications]);
+
+  const handleLogin = (loggedInUser: User) => {
+    setUser(loggedInUser);
+    setView('dashboard');
+  };
+
+  const handleSignup = (newUser: User) => {
+    setUser(newUser);
+    setView('dashboard');
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    setView('login');
+    setSelectedCaseId(null);
+  };
+
+  const handleOpenCase = (caseId: string) => {
+    if (user?.role === 'writer') {
+      setSelectedCaseId(caseId);
+      setView('editor');
+    } else {
+      setMatrixCaseId(caseId);
+      setView('matrix');
+    }
+  };
+
+  const handleBackToDashboard = () => {
+    setSelectedCaseId(null);
+    setMatrixCaseId(null);
+    setInspectingCell(null);
+    setShowReturnModal(false);
+    setView('dashboard');
+  };
+
+  const isFullscreen = view === 'dashboard' || view === 'editor' || view === 'matrix';
 
   return (
-    <div className="p5176-page">
-      <header className="p5176-header">
-        <div className="p5176-headerLeft">
-          <h1>Assignment 5 Implementation Prototypes</h1>
-          <p>This 5176 workspace implements only the updated requirements, each as a separate testable prototype step.</p>
+    <div className={`app-container${isFullscreen ? ' fullscreen' : ''}`}>
+      {view === 'login' && (
+        <LoginPage
+          onLogin={handleLogin}
+          onSwitchToSignup={() => setView('signup')}
+        />
+      )}
+      {view === 'signup' && (
+        <SignupPage
+          onSignup={handleSignup}
+          onSwitchToLogin={() => setView('login')}
+        />
+      )}
+      {view === 'dashboard' && user && (
+        <DashboardPage
+          user={user}
+          cases={cases}
+          notifications={notifications}
+          setCases={setCases}
+          setNotifications={setNotifications}
+          onLogout={handleLogout}
+          onOpenCase={handleOpenCase}
+        />
+      )}
+      {view === 'editor' && user && selectedCaseId && (
+        <CaseEditorPage
+          user={user}
+          caseId={selectedCaseId}
+          cases={cases}
+          setCases={setCases}
+          setNotifications={setNotifications}
+          onBack={handleBackToDashboard}
+        />
+      )}
+      {view === 'matrix' && user && matrixCaseId && (
+        <ReviewMatrixPage
+          user={user}
+          caseId={matrixCaseId}
+          cases={cases}
+          setCases={setCases}
+          setNotifications={setNotifications}
+          inspectingCell={inspectingCell}
+          setInspectingCell={setInspectingCell}
+          showReturnModal={showReturnModal}
+          setShowReturnModal={setShowReturnModal}
+          onBack={handleBackToDashboard}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============== LOGIN PAGE ==============
+
+interface LoginPageProps {
+  onLogin: (user: User) => void;
+  onSwitchToSignup: () => void;
+}
+
+function LoginPage({ onLogin, onSwitchToSignup }: LoginPageProps) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (!email || !password) {
+      setError('Please fill in all fields');
+      return;
+    }
+
+    // Check registered users
+    const registeredUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]') as Array<User & { password: string }>;
+    const foundUser = registeredUsers.find(u => u.email === email && u.password === password);
+
+    if (foundUser) {
+      const { password: _, ...userWithoutPassword } = foundUser;
+      onLogin(userWithoutPassword);
+    } else {
+      setError('Invalid email or password');
+    }
+  };
+
+  return (
+    <div className="auth-card">
+      <h1 className="auth-title">CUSTOMS CASE MANAGER</h1>
+
+      <form onSubmit={handleSubmit} className="auth-form">
+        {error && <div className="auth-error">{error}</div>}
+
+        <div className="form-group">
+          <label htmlFor="email">Email</label>
+          <input
+            type="email"
+            id="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Enter your email"
+          />
         </div>
-        <div className="p5176-headerRight">
-          <div className="p5176-badge">
-            Active: <span>{activeReq}</span>
-          </div>
-          <div className="p5176-badge">
-            Case: <span>{selectedCase || 'None'}</span>
-          </div>
-          <button className="p5176-headerResetBtn" onClick={resetActiveCase} disabled={!selectedCaseObj}>
-            Reset Status
-          </button>
+
+        <div className="form-group">
+          <label htmlFor="password">Password</label>
+          <input
+            type="password"
+            id="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Enter your password"
+          />
         </div>
-      </header>
 
-      <div className="p5176-layout">
-        <aside className="p5176-steps">
-          <div className="p5176-stepsTitle">Requirement Steps</div>
-          {reqTabs.map((tab, idx) => (
-            <button
-              key={tab}
-              className={`p5176-step ${tab === activeReq ? 'active' : ''}`}
-              onClick={() => setActiveReq(tab)}
-              disabled={!selectedCase && CASE_REQUIRED_REQS.has(tab)}
-              title={!selectedCase && CASE_REQUIRED_REQS.has(tab) ? 'Activate a case from Req 3 dashboard first.' : undefined}
-            >
-              <div className="p5176-stepReq">{tab}</div>
-              <div className="p5176-stepRow">
-                <div className="p5176-stepIndex">{idx + 1}</div>
-                <div className="p5176-stepTitle">{reqMeta[tab].title}</div>
-              </div>
-              <div className="p5176-stepHint">{reqMeta[tab].hint}</div>
-            </button>
-          ))}
-        </aside>
+        <button type="submit" className="btn btn-primary">
+          Log In
+        </button>
+      </form>
 
-        <section className="p5176-content">
-          <div className="p5176-currentHint">
-            <strong>What to do now:</strong> {reqMeta[activeReq].hint}
-          </div>
+      <p className="auth-switch">
+        Don't have an account?{' '}
+        <button type="button" className="link-btn" onClick={onSwitchToSignup}>
+          Sign up
+        </button>
+      </p>
+    </div>
+  );
+}
 
-          {activeReq === 'Req 1' ? (
-        <section className="p5176-card">
-          <h2>Req 1 - Hello world app</h2>
-          <div className="req-kicker">
-            <span className="status-pill pill-review">Objective</span>
-            <span className="req-note">Confirm the app boots on the intended device/runtime.</span>
-          </div>
-          <div className="panel-grid">
-            <div className="panel">
-              <h3>Runtime Check</h3>
-              <p>Hello world from the target web runtime on localhost:5176.</p>
-            </div>
-            <div className="panel">
-              <h3>Evidence to Capture</h3>
-              <ul className="clean-list">
-                <li>Open app URL on target environment.</li>
-                <li>Show initial render without errors.</li>
-                <li>Capture short clip or screenshot.</li>
-              </ul>
-            </div>
-          </div>
-        </section>
-      ) : null}
+// ============== SIGNUP PAGE ==============
 
-      {activeReq === 'Req 2' ? (
-        <section className="p5176-card">
-          <h2>Req 2 - Hello styles</h2>
-          <div className="req-kicker">
-            <span className="status-pill pill-review">Objective</span>
-            <span className="req-note">Demonstrate style tokens used in the final UI system.</span>
-          </div>
-          <div className="style-row">
-            <span className="swatch primary">Primary</span>
-            <span className="swatch accent">Accent</span>
-            <span className="swatch warn">Warning</span>
-            <span className="badge">Status badge</span>
-            <button className="btn-main">Primary button</button>
-            <button className="btn-alt">Secondary button</button>
-          </div>
-          <p className="style-font-1">Typography level 1</p>
-          <p className="style-font-2">Typography level 2</p>
-          <p>Icon samples: 🧾 📎 ✅ ⚠️</p>
-          <div className="metric-grid">
-            <div className="metric-card"><strong>Colors</strong><span>3 swatches + badge</span></div>
-            <div className="metric-card"><strong>Typography</strong><span>2 hierarchy levels</span></div>
-            <div className="metric-card"><strong>Components</strong><span>Primary and secondary actions</span></div>
-          </div>
-        </section>
-      ) : null}
+interface SignupPageProps {
+  onSignup: (user: User) => void;
+  onSwitchToLogin: () => void;
+}
 
-      {activeReq === 'Req 3' ? (
-        <section className="p5176-card">
-          <h2>Req 3 - Role dashboards and case organization</h2>
-          <div className="req-kicker">
-            <span className="status-pill pill-review">Dashboard Flow</span>
-            <span className="req-note">
-              Dashboard style and visible states change by role.
-            </span>
-          </div>
-          <div className="toolbar">
-            <div className="toolbar-left">
-              <button className="btn-main" onClick={createCaseFromDashboard}>Create Case (Draft)</button>
-              <button onClick={() => routeCase('Ready for Review')} disabled={dashboardRole !== 'Case Reviewer'}>
-                Send to Lead Reviewer (Case Reviewer)
-              </button>
-              <button onClick={() => routeCase('Returned for Changes')} disabled={dashboardRole !== 'Lead Reviewer'}>
-                Return to Case Reviewer (Lead Reviewer)
-              </button>
-              <button onClick={() => routeCase('Ready to Submit')} disabled={dashboardRole !== 'Lead Reviewer'}>
-                Submit to CEO (Lead Reviewer)
-              </button>
-              <button onClick={() => routeCase('Submitted')} disabled={dashboardRole !== 'CEO'}>
-                Submit to Customs (CEO only)
-              </button>
-            </div>
-            <div className="toolbar-right">
-              <label>
-                Role View
-                <select value={dashboardRole} onChange={(e) => setDashboardRole(e.target.value as DashboardRole)}>
-                  <option>Case Reviewer</option>
-                  <option>Lead Reviewer</option>
-                  <option>CEO</option>
-                </select>
-              </label>
-              <span className="inline-note">Active Case: {selectedCase}</span>
-            </div>
-          </div>
-          {dashboardRole === 'Case Reviewer' ? (
-            <div className="reviewer-dashboard">
-              <div className="reviewer-left">
-                <div className="reviewer-panel">
-                  <h3>Open Cases</h3>
-                  {cases
-                    .filter((c) => c.status === 'Draft' || c.status === 'Returned for Changes')
-                    .map((c) => (
-                      <button key={c.id} className="queue-row queue-rowBtn" onClick={() => activateCase(c.id)}>
-                        <strong>{c.id}</strong>
-                        <span className={`status-pill ${c.status === 'Draft' ? 'pill-draft' : 'pill-returned'}`}>{c.status}</span>
-                      </button>
-                    ))}
-                </div>
-                <div className="reviewer-panel">
-                  <h3>File Upload</h3>
-                  <p className="inline-note">Create a case, then upload files in Req 5 for this active case.</p>
-                  <button className="btn-main" onClick={createCaseFromDashboard}>+ Create Case</button>
-                </div>
-              </div>
-              <div className="reviewer-right">
-                <div className="reviewer-panel">
-                  <h3>Recent Activity</h3>
-                  <ul className="clean-list">
-                    {notifications.slice(0, 5).map((n, idx) => (
-                      <li key={`act-${idx}`}>{n}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="ceo-board">
-              {[
-                { title: 'Missing Ev.', status: 'Draft' as CaseStatus, tone: 'pill-returned' },
-                { title: 'Drafting', status: 'Draft' as CaseStatus, tone: 'pill-draft' },
-                { title: 'Ready For Review', status: 'Ready for Review' as CaseStatus, tone: 'pill-review' },
-                { title: 'Returned (Fix)', status: 'Returned for Changes' as CaseStatus, tone: 'pill-returned' },
-                { title: 'Completed', status: 'Ready to Submit' as CaseStatus, tone: 'pill-submit' },
-              ]
-                .filter((col) => !(dashboardRole === 'Lead Reviewer' && col.title === 'Completed'))
-                .map((col) => (
-                  <div key={col.title} className="ceo-col">
-                    <div className="ceo-col-head">{col.title}</div>
-                    {cases
-                      .filter((c) => c.status === col.status)
-                      .map((c) => (
-                        <button key={`ceo-${c.id}`} className="ceo-card" onClick={() => activateCase(c.id)}>
-                          <div className="ceo-card-top">
-                            <strong>{c.id}</strong>
-                            <span className={`status-pill ${col.tone}`}>{c.status}</span>
-                          </div>
-                          <div className="inline-note">
-                            {caseProfiles[c.id]?.uploadMode === 'combined'
-                              ? caseProfiles[c.id]?.combinedDoc?.name ?? 'No files'
-                              : (caseProfiles[c.id]?.separateDocs ?? []).map((d) => d.name).join(', ') || 'No files'}
-                          </div>
-                        </button>
-                      ))}
-                  </div>
-                ))}
-            </div>
-          )}
-        </section>
-      ) : null}
+function SignupPage({ onSignup, onSwitchToLogin }: SignupPageProps) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [role, setRole] = useState<Role>('writer');
+  const [company, setCompany] = useState('');
+  const [name, setName] = useState('');
+  const [error, setError] = useState('');
 
-      {activeReq === 'Req 4' ? (
-        <section className="p5176-card">
-          <h2>Req 4 - Case creation and manual declarant entry</h2>
-          <div className="req-kicker">
-            <span className="status-pill pill-review">Progress</span>
-            <span className="req-note">
-              {completedFieldCount}/5 declarant fields completed.
-            </span>
-          </div>
-          <div className="form-grid">
-            {(Object.keys(fieldLabels) as Array<keyof DeclarantFields>).map((field) => (
-              <label key={field}>
-                {fieldLabels[field]}
-                <input
-                  value={fields[field]}
-                  onChange={(e) => setFields((prev) => ({ ...prev, [field]: e.target.value }))}
-                  placeholder={`Enter ${fieldLabels[field]}`}
-                />
-              </label>
-            ))}
-          </div>
-          <div className="metric-grid">
-            <div className="metric-card"><strong>Case</strong><span>{selectedCase}</span></div>
-            <div className="metric-card"><strong>Completion</strong><span>{Math.round((completedFieldCount / 5) * 100)}%</span></div>
-            <div className="metric-card"><strong>Required Fields</strong><span>Company, Weight, Invoice, Item, Quantity</span></div>
-          </div>
-        </section>
-      ) : null}
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
 
-      {activeReq === 'Req 5' ? (
-        <section className="p5176-card">
-          <h2>Req 5 - Multi-file PDF upload and tabs</h2>
-          <div className="req-kicker">
-            <span
-              className={`status-pill ${
-                uploadMode === 'separate' ? (separateDocs.length >= 3 ? 'pill-submit' : 'pill-returned') : combinedDoc ? 'pill-submit' : 'pill-returned'
-              }`}
-            >
-              {uploadMode === 'separate' ? (separateDocs.length >= 3 ? 'Ready' : 'Pending') : combinedDoc ? 'Ready' : 'Pending'}
-            </span>
-            <span className="req-note">
-              Separate mode: upload at least 3 PDFs with tabs. Combined mode: upload one merged PDF.
-            </span>
-          </div>
-          <div className="toolbar req5-mode-toggle">
-            <label className="radio-inline">
-              <input
-                type="radio"
-                name="uploadMode"
-                checked={uploadMode === 'separate'}
-                onChange={() => switchUploadMode('separate')}
-              />
-              Separate PDFs
-            </label>
-            <label className="radio-inline">
-              <input
-                type="radio"
-                name="uploadMode"
-                checked={uploadMode === 'combined'}
-                onChange={() => switchUploadMode('combined')}
-              />
-              One combined PDF
-            </label>
-          </div>
-          <div className="panel-grid">
-            <div className="panel">
-              <h3>Upload Controls</h3>
-              {uploadMode === 'separate' ? (
-                <>
-                  <input type="file" accept="application/pdf" multiple onChange={handleFilesChange} />
-                  <p className="inline-note">Uploaded documents: {separateDocs.length}</p>
-                </>
-              ) : (
-                <>
-                  <input type="file" accept="application/pdf" onChange={handleCombinedFileChange} />
-                  <p className="inline-note">Combined document: {combinedDoc?.name ?? 'None'}</p>
-                </>
-              )}
-            </div>
-            <div className="panel">
-              <h3>Active Document</h3>
-              <p className="inline-note">{activeDocument?.name ?? 'No document selected yet.'}</p>
-            </div>
-          </div>
-          {uploadMode === 'separate' ? (
-            <div className="doc-tablist">
-              {separateDocs.map((doc, idx) => (
-                <button key={doc.name + idx} className={idx === activeDocIndex ? 'active-doc' : ''} onClick={() => setActiveDocIndex(idx)}>
-                  {doc.name}
+    if (!email || !password || !confirmPassword || !company || !name) {
+      setError('Please fill in all fields');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
+    // Check if email already exists
+    const registeredUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]') as Array<User & { password: string }>;
+    if (registeredUsers.some(u => u.email === email)) {
+      setError('An account with this email already exists');
+      return;
+    }
+
+    // Save user with password for auth
+    const userWithPassword = { email, password, role, company, name };
+    registeredUsers.push(userWithPassword);
+    localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
+
+    onSignup({ email, role, company, name });
+  };
+
+  return (
+    <div className="auth-card">
+      <h1 className="auth-title">CUSTOMS CASE MANAGER</h1>
+
+      <form onSubmit={handleSubmit} className="auth-form">
+        {error && <div className="auth-error">{error}</div>}
+
+        <div className="form-group">
+          <label htmlFor="signup-email">Email</label>
+          <input
+            type="email"
+            id="signup-email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Enter your email"
+          />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="signup-password">Password</label>
+          <input
+            type="password"
+            id="signup-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Create a password"
+          />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="confirm-password">Confirm Password</label>
+          <input
+            type="password"
+            id="confirm-password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Confirm your password"
+          />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="role">Role</label>
+          <select
+            id="role"
+            value={role}
+            onChange={(e) => setRole(e.target.value as Role)}
+          >
+            <option value="writer">Case Writer</option>
+            <option value="lead_reviewer">Lead Reviewer</option>
+            <option value="ceo">CEO</option>
+          </select>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="company">Company Name</label>
+          <input
+            type="text"
+            id="company"
+            value={company}
+            onChange={(e) => setCompany(e.target.value)}
+            placeholder="Enter your company name"
+          />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="name">Full Name</label>
+          <input
+            type="text"
+            id="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Enter your full name"
+          />
+        </div>
+
+        <button type="submit" className="btn btn-success">
+          Create Account
+        </button>
+      </form>
+
+      <p className="auth-switch">
+        Already have an account?{' '}
+        <button type="button" className="link-btn" onClick={onSwitchToLogin}>
+          Log in
+        </button>
+      </p>
+    </div>
+  );
+}
+
+// ============== DASHBOARD PAGE ==============
+
+interface DashboardPageProps {
+  user: User;
+  cases: Case[];
+  notifications: Notification[];
+  setCases: React.Dispatch<React.SetStateAction<Case[]>>;
+  setNotifications: React.Dispatch<React.SetStateAction<Notification[]>>;
+  onLogout: () => void;
+  onOpenCase: (caseId: string) => void;
+}
+
+const STATUS_LANES: { status: CaseStatus; label: string; color: string }[] = [
+  { status: 'drafting', label: 'DRAFTING', color: '#1e2d40' },
+  { status: 'missing_ev', label: 'MISSING EV.', color: '#f59e0b' },
+  { status: 'ready_review', label: 'READY FOR REVIEW', color: '#2f6fd4' },
+  { status: 'returned', label: 'RETURNED (FIX)', color: '#ef4444' },
+  { status: 'completed', label: 'COMPLETED', color: '#22c55e' },
+];
+
+function DashboardPage({
+  user,
+  cases,
+  notifications,
+  setCases,
+  setNotifications,
+  onLogout,
+  onOpenCase
+}: DashboardPageProps) {
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<CaseStatus | null>(null);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [activityFilter, setActivityFilter] = useState<'all' | 'filter'>('all');
+
+  const createCase = () => {
+    const newCase: Case = {
+      id: `case-${Date.now()}`,
+      title: `Case #${cases.length + 1}`,
+      createdBy: user.name,
+      createdAt: new Date(),
+      status: 'drafting',
+      fields: {
+        hsCode: '',
+        originCountry: '',
+        destCountry: '',
+        invoiceAmount: '',
+        netWeight: '',
+        grossWeight: '',
+        exitCustoms: '',
+        iban: '',
+        others: '',
+      },
+      docs: [],
+      links: [],
+      regions: [],
+      comments: [],
+    };
+    setCases(prev => [...prev, newCase]);
+    onOpenCase(newCase.id);
+  };
+
+  const handleNotificationClick = () => {
+    setShowNotifications(prev => !prev);
+  };
+
+  const dismissNotification = (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
+
+  const filterCases = (status: CaseStatus): Case[] => {
+    return cases.filter(c => c.status === status);
+  };
+
+  const getFilledFieldsCount = (c: Case): number => {
+    return Object.values(c.fields).filter(v => v.trim() !== '').length;
+  };
+
+  const getConflictsCount = (c: Case): number => {
+    return c.links.filter(l => l.status === 'conflict').length;
+  };
+
+  const unreadCount = notifications.filter(n => !n.read).length;
+  const userInitials = user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+
+  const displayedCases = activeFilter ? filterCases(activeFilter) : cases;
+  
+  // Count of flagged (returned) cases for the writer view
+  const flaggedCount = cases.filter(c => c.status === 'returned').length;
+
+  // Get status pill info
+  const getStatusPill = (status: CaseStatus): { label: string; color: string } => {
+    switch (status) {
+      case 'drafting': return { label: 'Draft', color: '#64748b' };
+      case 'missing_ev': return { label: 'Missing Ev.', color: '#f59e0b' };
+      case 'ready_review': return { label: 'Ready', color: '#2f6fd4' };
+      case 'returned': return { label: 'Returned', color: '#ef4444' };
+      case 'completed': return { label: 'Completed', color: '#22c55e' };
+      default: return { label: 'New', color: '#22c55e' };
+    }
+  };
+
+  // Generate mock recent activity from cases
+  const recentActivity = cases.slice(0, 5).map(c => ({
+    id: c.id,
+    title: c.title,
+    status: c.status,
+    createdBy: c.createdBy,
+    timestamp: c.createdAt,
+  }));
+
+  const formatTimestamp = (date: Date): string => {
+    const now = new Date();
+    const diff = now.getTime() - new Date(date).getTime();
+    const minutes = Math.floor(diff / 60000);
+    if (minutes < 1) return 'just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
+  };
+
+  // Writer Dashboard - Two Column Layout
+  if (user.role === 'writer') {
+    return (
+      <div className="dashboard-container">
+        <div className="dashboard-card">
+          <header className="dashboard-header">
+            <h1 className="dashboard-title">DASHBOARD</h1>
+
+            <div className="header-actions">
+              <div className="notification-wrapper">
+                <button
+                  className="notification-btn"
+                  onClick={handleNotificationClick}
+                  aria-label="Notifications"
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                  </svg>
+                  {unreadCount > 0 && (
+                    <span className="notification-badge">{unreadCount}</span>
+                  )}
                 </button>
-              ))}
-            </div>
-          ) : null}
-          <p>Active tab document: {activeDocument?.name ?? displayDocNames[activeDocIndex] ?? 'None'}</p>
-          <div className="pdf-previewWrap">
-            <h3>PDF Preview</h3>
-            {activePdfUrl ? (
-              <iframe title="Active PDF preview" src={activePdfUrl} className="pdf-previewFrame" />
-            ) : (
-              <p className="inline-note">Upload a PDF to preview it here.</p>
-            )}
-          </div>
-        </section>
-      ) : null}
 
-      {activeReq === 'Req 6' ? (
-        <section className="p5176-card">
-          <h2>Req 6 - Manual evidence linking</h2>
-          <div className="req-kicker">
-            <span className="status-pill pill-review">Linked Fields</span>
-            <span className="req-note">{linkedFieldCount}/5 fields currently linked to evidence.</span>
-          </div>
-          {req6DocNames.length === 0 ? <p className="inline-note">Upload PDFs in Req 5 first. Req 6 tabs and preview come from uploaded files.</p> : null}
-          <div className="linking-canvas" ref={linkingCanvasRef} onMouseMove={updateDrag} onMouseUp={finishDrag} onMouseLeave={finishDrag}>
-            <svg className="linking-svg">
-              {visualLinks
-                .filter((link) => link.docName === req6ActiveDocName)
-                .map((link) => {
-                  void linkRenderTick;
-                  const fieldEl = fieldRefs.current[link.field];
-                  const targetEl = targetRefs.current[link.targetId];
-                  const rootEl = linkingCanvasRef.current;
-                  if (!fieldEl || !targetEl || !rootEl) return null;
-                  const root = rootEl.getBoundingClientRect();
-                  const f = fieldEl.getBoundingClientRect();
-                  const t = targetEl.getBoundingClientRect();
-                  const x1 = f.right - root.left;
-                  const y1 = f.top + f.height / 2 - root.top;
-                  const x2 = t.left - root.left;
-                  const y2 = t.top + t.height / 2 - root.top;
-                  return <line key={`${link.field}-${link.targetId}`} x1={x1} y1={y1} x2={x2} y2={y2} className="link-line" />;
-                })}
-              {draggingField && dragPoint && fieldRefs.current[draggingField] && linkingCanvasRef.current ? (
-                (() => {
-                  const root = linkingCanvasRef.current.getBoundingClientRect();
-                  const f = fieldRefs.current[draggingField]!.getBoundingClientRect();
-                  const x1 = f.right - root.left;
-                  const y1 = f.top + f.height / 2 - root.top;
-                  return <line x1={x1} y1={y1} x2={dragPoint.x} y2={dragPoint.y} className="link-line link-line-drag" />;
-                })()
-              ) : null}
-            </svg>
-            <div className="linking-left">
-              <div className="linking-title">Declarant</div>
-              {declarantOrder.map((field) => {
-                const link = links.find((l) => l.field === field);
-                return (
-                  <div
-                    key={field}
-                    ref={(el) => {
-                      fieldRefs.current[field] = el;
-                    }}
-                    className={`decl-row ${selectedField === field ? 'active' : ''}`}
-                    onClick={() => setSelectedField(field)}
-                  >
-                    <div>
-                      <div className="decl-label">{fieldLabels[field]}</div>
-                      <div className="decl-value">{fields[field] || '(empty value)'}</div>
+                {showNotifications && (
+                  <div className="notification-popup">
+                    <div className="notification-popup-header">
+                      <span className="notification-tag">Notification!</span>
+                      <button
+                        className="notification-close"
+                        onClick={() => setShowNotifications(false)}
+                        aria-label="Close notifications"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                    <div className="notification-popup-body">
+                      {notifications.length === 0 ? (
+                        <p className="notification-empty">No notifications</p>
+                      ) : (
+                        notifications.map(n => (
+                          <div key={n.id} className="notification-item">
+                            <p>{n.message}</p>
+                            <button
+                              className="notification-dismiss"
+                              onClick={() => dismissNotification(n.id)}
+                              aria-label="Dismiss notification"
+                            >
+                              &times;
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <button
+                className="btn btn-outline"
+                onClick={() => setActiveFilter(activeFilter ? null : 'drafting')}
+              >
+                Filter +
+              </button>
+
+              <div className="user-avatar-wrapper">
+                <button
+                  className="user-avatar"
+                  title={user.name}
+                  onClick={() => setShowUserMenu(prev => !prev)}
+                >
+                  {userInitials}
+                </button>
+                {showUserMenu && (
+                  <div className="user-menu">
+                    <div className="user-menu-info">
+                      <div className="user-menu-name">{user.name}</div>
+                      <div className="user-menu-email">{user.email}</div>
+                      <div className="user-menu-role">{user.role.replace('_', ' ')}</div>
                     </div>
                     <button
-                      type="button"
-                      className={`decl-linkBtn ${link ? 'linked' : ''}`}
-                      onMouseDown={(e) => startFieldDrag(field, e)}
+                      className="user-menu-item"
+                      onClick={() => { setShowUserMenu(false); onLogout(); }}
                     >
-                      {link ? 'Relink' : 'Drag'}
+                      🚪 Log Out
                     </button>
                   </div>
+                )}
+              </div>
+            </div>
+          </header>
+
+          <div className="header-divider"></div>
+
+          <main className="dashboard-main writer-dashboard">
+            <div className="writer-two-column">
+              {/* LEFT COLUMN */}
+              <div className="writer-left-column">
+                {/* Box 1: Open Cases */}
+                <div className="writer-box">
+                  <div className="writer-box-header">
+                    <div className="writer-box-title-row">
+                      <span className="writer-box-count">{cases.length}</span>
+                      <span className="writer-box-label">Open Cases</span>
+                      {flaggedCount > 0 && (
+                        <span className="writer-flagged-badge">{flaggedCount} Flagged</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="writer-box-divider"></div>
+                  <div className="writer-cases-list">
+                    {cases.length === 0 ? (
+                      <div className="writer-empty-state">
+                        <p>No cases yet. Create your first case to get started.</p>
+                      </div>
+                    ) : (
+                      cases.map(c => {
+                        const statusPill = getStatusPill(c.status);
+                        return (
+                          <div
+                            key={c.id}
+                            className="writer-case-row"
+                            onClick={() => onOpenCase(c.id)}
+                          >
+                            <div className="writer-case-icon">
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                              </svg>
+                            </div>
+                            <span className="writer-case-name">{c.title}</span>
+                            <span
+                              className="writer-status-pill"
+                              style={{ backgroundColor: statusPill.color }}
+                            >
+                              {statusPill.label}
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* Box 2: File Upload */}
+                <div className="writer-box">
+                  <div className="writer-box-header">
+                    <span className="writer-box-label">File Upload</span>
+                  </div>
+                  <div className="writer-box-divider"></div>
+                  <div className="writer-file-upload-content">
+                    <div className="writer-file-thumbnails">
+                      <div className="writer-file-thumb">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                          <polyline points="14 2 14 8 20 8"></polyline>
+                        </svg>
+                        <span>Invoice...</span>
+                      </div>
+                      <div className="writer-file-thumb">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2">
+                          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                        <span>Folder</span>
+                      </div>
+                    </div>
+                    <div className="writer-drop-zone" onClick={createCase}>
+                      <div className="writer-drop-zone-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                          <polyline points="17 8 12 3 7 8"></polyline>
+                          <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                      </div>
+                      <p className="writer-drop-zone-text">Drag and drop to upload files,<br />Create a new case</p>
+                      <button className="btn btn-primary writer-create-case-btn" onClick={(e) => { e.stopPropagation(); createCase(); }}>
+                        Create Case
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* RIGHT COLUMN */}
+              <div className="writer-right-column">
+                {/* Box 1: Recent Activity */}
+                <div className="writer-box writer-activity-box">
+                  <div className="writer-box-header">
+                    <span className="writer-box-label">Recent Activity</span>
+                    <div className="writer-activity-filters">
+                      <button
+                        className={`writer-activity-filter-btn ${activityFilter === 'all' ? 'active' : ''}`}
+                        onClick={() => setActivityFilter('all')}
+                      >
+                        ALL
+                      </button>
+                      <button
+                        className={`writer-activity-filter-btn ${activityFilter === 'filter' ? 'active' : ''}`}
+                        onClick={() => setActivityFilter('filter')}
+                      >
+                        ▼ Filter
+                      </button>
+                    </div>
+                  </div>
+                  <div className="writer-box-divider"></div>
+                  <div className="writer-activity-list">
+                    {recentActivity.length === 0 ? (
+                      <div className="writer-empty-state">
+                        <p>No recent activity</p>
+                      </div>
+                    ) : (
+                      recentActivity.map(activity => {
+                        const statusPill = getStatusPill(activity.status);
+                        return (
+                          <div key={activity.id} className="writer-activity-item" onClick={() => onOpenCase(activity.id)}>
+                            <div className="writer-case-icon">
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                              </svg>
+                            </div>
+                            <div className="writer-activity-info">
+                              <div className="writer-activity-title-row">
+                                <span className="writer-activity-title">{activity.title}</span>
+                                <span
+                                  className="writer-status-pill writer-status-pill-sm"
+                                  style={{ backgroundColor: statusPill.color }}
+                                >
+                                  {statusPill.label}
+                                </span>
+                              </div>
+                              <div className="writer-activity-meta">
+                                <span>Cr: by {activity.createdBy === user.name ? 'you' : activity.createdBy}</span>
+                                <span className="writer-activity-time">{formatTimestamp(activity.timestamp)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* Box 2: Create Case CTA */}
+                <div className="writer-box writer-cta-box">
+                  <button className="writer-big-create-btn" onClick={createCase}>
+                    + Create Case
+                  </button>
+                  <p className="writer-cta-note">Note: A blank page will be opened for case</p>
+                </div>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  // Lead Reviewer / CEO Dashboard - True Kanban Board
+  const [showCompletedHistory, setShowCompletedHistory] = useState(true);
+
+  // Get stale count for a case
+  const getStaleCount = (c: Case): number => {
+    return c.links.filter(l => l.status === 'stale').length;
+  };
+
+  // Check if case needs re-uploading (has comments mentioning re-upload or similar)
+  const needsReUploading = (c: Case): boolean => {
+    return c.comments.some(comment => 
+      comment.text.toLowerCase().includes('re-upload') || 
+      comment.text.toLowerCase().includes('reupload') ||
+      comment.text.toLowerCase().includes('upload again')
+    );
+  };
+
+  // Check for critical comments
+  const getCriticalComments = (c: Case): number => {
+    return c.comments.filter(comment => 
+      comment.text.toLowerCase().includes('critical') ||
+      comment.text.toLowerCase().includes('urgent') ||
+      comment.text.toLowerCase().includes('important')
+    ).length;
+  };
+
+  // Check if case has questions
+  const getQuestionCount = (c: Case): number => {
+    return c.comments.filter(comment => comment.text.includes('?')).length;
+  };
+
+  // Check if needs fixing (returned status has specific fix requirements)
+  const getNeedsFixingCount = (c: Case): number => {
+    if (c.status !== 'returned') return 0;
+    return c.comments.filter(comment => 
+      comment.text.toLowerCase().includes('[returned]') ||
+      comment.text.toLowerCase().includes('fix') ||
+      comment.text.toLowerCase().includes('correct')
+    ).length || 1; // At least 1 if returned
+  };
+
+  // Render a kanban card
+  const renderKanbanCard = (c: Case) => {
+    const filledFields = getFilledFieldsCount(c);
+    const conflicts = getConflictsCount(c);
+    const staleCount = getStaleCount(c);
+    const criticalComments = getCriticalComments(c);
+    const questionCount = getQuestionCount(c);
+    const needsFixing = getNeedsFixingCount(c);
+    const needsReUpload = needsReUploading(c);
+    const caseNumber = c.id.split('-')[1]?.slice(-2) || '0';
+
+    return (
+      <div
+        key={c.id}
+        className="kanban-card"
+        onClick={() => onOpenCase(c.id)}
+      >
+        <div className="kanban-card-header">
+          <span className="kanban-card-title">{c.title.length > 18 ? c.title.slice(0, 18) + '...' : c.title}</span>
+          <span className="kanban-card-number">#{caseNumber}</span>
+        </div>
+        <div className="kanban-card-author">by {c.createdBy}</div>
+        <div className="kanban-card-bullets">
+          <div className="kanban-bullet">
+            <span className="kanban-bullet-dot" style={{ backgroundColor: filledFields === 9 ? '#2f6fd4' : '#64748b' }}></span>
+            <span>Fields {filledFields}/9</span>
+          </div>
+          {conflicts > 0 && (
+            <div className="kanban-bullet kanban-bullet-red">
+              <span className="kanban-bullet-dot" style={{ backgroundColor: '#ef4444' }}></span>
+              <span>Conflicts: {conflicts}</span>
+            </div>
+          )}
+          {staleCount > 0 && (
+            <div className="kanban-bullet kanban-bullet-red">
+              <span className="kanban-bullet-dot" style={{ backgroundColor: '#ef4444' }}></span>
+              <span>Stale: {staleCount}</span>
+            </div>
+          )}
+          {c.status === 'missing_ev' && (
+            <div className="kanban-bullet kanban-bullet-amber">
+              <span className="kanban-bullet-dot" style={{ backgroundColor: '#f59e0b' }}></span>
+              <span>Due: Today</span>
+            </div>
+          )}
+          {questionCount === 0 && (
+            <div className="kanban-bullet">
+              <span className="kanban-bullet-dot" style={{ backgroundColor: '#94a3b8' }}></span>
+              <span>No questions</span>
+            </div>
+          )}
+          {questionCount > 0 && (
+            <div className="kanban-bullet">
+              <span className="kanban-bullet-dot" style={{ backgroundColor: '#64748b' }}></span>
+              <span>{questionCount} Question{questionCount > 1 ? 's' : ''}</span>
+            </div>
+          )}
+          {criticalComments > 0 && (
+            <div className="kanban-bullet kanban-bullet-red">
+              <span className="kanban-bullet-dot" style={{ backgroundColor: '#ef4444' }}></span>
+              <span>{criticalComments} critical comment{criticalComments > 1 ? 's' : ''}</span>
+            </div>
+          )}
+          {needsFixing > 0 && (
+            <div className="kanban-bullet kanban-bullet-red">
+              <span className="kanban-bullet-dot" style={{ backgroundColor: '#ef4444' }}></span>
+              <span>Needs fixing: {needsFixing}</span>
+            </div>
+          )}
+          {needsReUpload && (
+            <div className="kanban-bullet kanban-bullet-red">
+              <span className="kanban-bullet-dot" style={{ backgroundColor: '#ef4444' }}></span>
+              <span>Needs re-uploading</span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Render completed column with submission history
+  const renderCompletedColumn = () => {
+    const completedCases = filterCases('completed');
+    const totalDocs = completedCases.reduce((sum, c) => sum + c.docs.length, 0);
+
+    return (
+      <div className="kanban-column">
+        <div className="kanban-col-header kanban-col-completed">COMPLETED</div>
+        {completedCases.length > 0 && (
+          <>
+            {completedCases.slice(0, 1).map(c => {
+              const filledFields = getFilledFieldsCount(c);
+              const caseNumber = c.id.split('-')[1]?.slice(-2) || '0';
+              return (
+                <div
+                  key={c.id}
+                  className="kanban-card kanban-card-completed"
+                  onClick={() => onOpenCase(c.id)}
+                >
+                  <div className="kanban-card-header">
+                    <span className="kanban-card-title">{c.title.length > 15 ? c.title.slice(0, 15) + '...' : c.title}</span>
+                    <span className="kanban-card-number">#{caseNumber}</span>
+                  </div>
+                  <div className="kanban-card-author">by {c.createdBy}</div>
+                  <div className="kanban-card-bullets">
+                    <div className="kanban-bullet">
+                      <span className="kanban-bullet-dot" style={{ backgroundColor: '#f59e0b' }}></span>
+                      <span>Fields {filledFields}/10</span>
+                    </div>
+                    <div className="kanban-bullet kanban-bullet-green">
+                      <span className="kanban-bullet-dot" style={{ backgroundColor: '#22c55e' }}></span>
+                      <span>Everything correct</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            <button
+              className="kanban-submitted-btn"
+              onClick={() => setShowCompletedHistory(!showCompletedHistory)}
+            >
+              {showCompletedHistory ? 'Hide' : 'Show'} submitted documents
+              <br />
+              <span className="kanban-submitted-count">({totalDocs > 0 ? `${totalDocs} documents` : 'to customs'})</span>
+            </button>
+            {showCompletedHistory && completedCases.length > 1 && (
+              <div className="kanban-submission-history">
+                {completedCases.slice(1).map(c => {
+                  const caseNumber = c.id.split('-')[1]?.slice(-2) || '0';
+                  const dateStr = new Date(c.createdAt).toLocaleDateString();
+                  return (
+                    <div key={c.id} className="kanban-history-item" onClick={() => onOpenCase(c.id)}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                      </svg>
+                      <div className="kanban-history-info">
+                        <span className="kanban-history-title">Case #{caseNumber}</span>
+                        <span className="kanban-history-meta">by {c.createdBy} • {dateStr}</span>
+                      </div>
+                      <svg className="kanban-history-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+        {completedCases.length === 0 && (
+          <div className="kanban-empty-col">No completed cases</div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="dashboard-container">
+      <div className="dashboard-card">
+        <header className="dashboard-header">
+          <h1 className="dashboard-title">DASHBOARD</h1>
+
+          <div className="header-actions">
+            <button
+              className="btn btn-outline"
+              onClick={() => setActiveFilter(activeFilter ? null : 'drafting')}
+            >
+              Filter +
+            </button>
+
+            <button className="btn btn-primary" onClick={createCase}>
+              + Create Case
+            </button>
+
+            <div className="notification-wrapper">
+              <button
+                className="notification-btn"
+                onClick={handleNotificationClick}
+                aria-label="Notifications"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                </svg>
+                {unreadCount > 0 && (
+                  <span className="notification-badge">{unreadCount}</span>
+                )}
+              </button>
+
+              {showNotifications && (
+                <div className="notification-popup">
+                  <div className="notification-popup-header">
+                    <span className="notification-tag">Notification!</span>
+                    <button
+                      className="notification-close"
+                      onClick={() => setShowNotifications(false)}
+                      aria-label="Close notifications"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                  <div className="notification-popup-body">
+                    {notifications.length === 0 ? (
+                      <p className="notification-empty">No notifications</p>
+                    ) : (
+                      notifications.map(n => (
+                        <div key={n.id} className="notification-item">
+                          <p>{n.message}</p>
+                          <button
+                            className="notification-dismiss"
+                            onClick={() => dismissNotification(n.id)}
+                            aria-label="Dismiss notification"
+                          >
+                            &times;
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="user-avatar-wrapper">
+              <button
+                className="user-avatar"
+                title={user.name}
+                onClick={() => setShowUserMenu(prev => !prev)}
+              >
+                {userInitials}
+              </button>
+              {showUserMenu && (
+                <div className="user-menu">
+                  <div className="user-menu-info">
+                    <div className="user-menu-name">{user.name}</div>
+                    <div className="user-menu-email">{user.email}</div>
+                    <div className="user-menu-role">{user.role.replace('_', ' ')}</div>
+                  </div>
+                  <button
+                    className="user-menu-item"
+                    onClick={() => { setShowUserMenu(false); onLogout(); }}
+                  >
+                    🚪 Log Out
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+
+        <div className="header-divider"></div>
+
+        <main className="dashboard-main reviewer-dashboard">
+          {cases.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                  <line x1="12" y1="18" x2="12" y2="12"></line>
+                  <line x1="9" y1="15" x2="15" y2="15"></line>
+                </svg>
+              </div>
+              <h3 className="empty-state-title">NO CASES YET</h3>
+              <p className="empty-state-text">Get started by creating your first customs case.</p>
+              <button className="btn btn-primary" onClick={createCase}>
+                + Create Your First Case
+              </button>
+            </div>
+          ) : (
+            <div className="reviewer-kanban">
+              {/* Column 1: DRAFTING */}
+              <div className="kanban-column">
+                <div className="kanban-col-header kanban-col-drafting">DRAFTING</div>
+                {filterCases('drafting').map(c => renderKanbanCard(c))}
+                {filterCases('drafting').length === 0 && (
+                  <div className="kanban-empty-col">No drafts</div>
+                )}
+              </div>
+
+              {/* Column 2: MISSING EV. */}
+              <div className="kanban-column">
+                <div className="kanban-col-header kanban-col-missing">MISSING EV.</div>
+                {filterCases('missing_ev').map(c => renderKanbanCard(c))}
+                {filterCases('missing_ev').length === 0 && (
+                  <div className="kanban-empty-col">None missing</div>
+                )}
+              </div>
+
+              {/* Column 3: READY FOR REVIEW */}
+              <div className="kanban-column">
+                <div className="kanban-col-header kanban-col-review">READY FOR REVIEW</div>
+                {filterCases('ready_review').map(c => renderKanbanCard(c))}
+                {filterCases('ready_review').length === 0 && (
+                  <div className="kanban-empty-col">None ready</div>
+                )}
+              </div>
+
+              {/* Column 4: RETURNED (FIX) */}
+              <div className="kanban-column">
+                <div className="kanban-col-header kanban-col-returned">RETURNED (FIX)</div>
+                {filterCases('returned').map(c => renderKanbanCard(c))}
+                {filterCases('returned').length === 0 && (
+                  <div className="kanban-empty-col">None returned</div>
+                )}
+              </div>
+
+              {/* Column 5: COMPLETED */}
+              {renderCompletedColumn()}
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+// ============== CASE EDITOR PAGE ==============
+
+interface CaseEditorPageProps {
+  user: User;
+  caseId: string;
+  cases: Case[];
+  setCases: React.Dispatch<React.SetStateAction<Case[]>>;
+  setNotifications: React.Dispatch<React.SetStateAction<Notification[]>>;
+  onBack: () => void;
+}
+
+const FIELD_LABELS: Record<DeclarantField, string> = {
+  hsCode: 'HS Code',
+  originCountry: 'Origin Country',
+  destCountry: 'Destination Country',
+  invoiceAmount: 'Invoice Amount',
+  netWeight: 'Net Weight',
+  grossWeight: 'Gross Weight',
+  exitCustoms: 'Exit Customs',
+  iban: 'IBAN',
+  others: 'Others',
+};
+
+const DOC_TABS: { type: DocumentType; label: string }[] = [
+  { type: 'invoice', label: 'Invoice' },
+  { type: 'packageList', label: 'Package List' },
+  { type: 'atr', label: 'ATR' },
+  { type: 'insurance', label: 'Insurance' },
+];
+
+function CaseEditorPage({ user, caseId, cases, setCases, setNotifications, onBack }: CaseEditorPageProps) {
+  const currentCase = cases.find(c => c.id === caseId);
+  const [editingField, setEditingField] = useState<DeclarantField | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [newCommentText, setNewCommentText] = useState('');
+  const [activeDocTab, setActiveDocTab] = useState<DocumentType>('invoice');
+
+  // SVG Arrow System State
+  const [draggingField, setDraggingField] = useState<DeclarantField | null>(null);
+  const [dragPoint, setDragPoint] = useState<{ x: number; y: number } | null>(null);
+  const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
+
+  // Refs for arrow positioning
+  const editorRef = useRef<HTMLDivElement>(null);
+  const fieldRefs = useRef<Record<DeclarantField, HTMLDivElement | null>>({
+    hsCode: null,
+    originCountry: null,
+    destCountry: null,
+    invoiceAmount: null,
+    netWeight: null,
+    grossWeight: null,
+    exitCustoms: null,
+    iban: null,
+    others: null,
+  });
+  const regionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const docViewerRef = useRef<HTMLDivElement>(null);
+
+  // Get field position relative to editor container
+  const getFieldPosition = useCallback((field: DeclarantField): { x: number; y: number } | null => {
+    const fieldEl = fieldRefs.current[field];
+    const editorEl = editorRef.current;
+    if (!fieldEl || !editorEl) return null;
+
+    const fieldRect = fieldEl.getBoundingClientRect();
+    const editorRect = editorEl.getBoundingClientRect();
+
+    return {
+      x: fieldRect.right - editorRect.left,
+      y: fieldRect.top + fieldRect.height / 2 - editorRect.top,
+    };
+  }, []);
+
+  // Get region position relative to editor container
+  const getRegionPosition = useCallback((regionId: string): { x: number; y: number } | null => {
+    const regionEl = regionRefs.current[regionId];
+    const editorEl = editorRef.current;
+    if (!regionEl || !editorEl) return null;
+
+    const regionRect = regionEl.getBoundingClientRect();
+    const editorRect = editorEl.getBoundingClientRect();
+
+    return {
+      x: regionRect.left + regionRect.width / 2 - editorRect.left,
+      y: regionRect.top + regionRect.height / 2 - editorRect.top,
+    };
+  }, []);
+
+  // Generate curved bezier path between two points
+  const generatePath = useCallback((start: { x: number; y: number }, end: { x: number; y: number }): string => {
+    const midX = (start.x + end.x) / 2;
+    const controlOffset = Math.min(80, Math.abs(end.x - start.x) / 3);
+    return `M ${start.x} ${start.y} C ${start.x + controlOffset} ${start.y}, ${midX} ${(start.y + end.y) / 2}, ${end.x} ${end.y}`;
+  }, []);
+
+  // Start field drag
+  const startFieldDrag = useCallback((field: DeclarantField, event: React.MouseEvent) => {
+    event.preventDefault();
+    const editorEl = editorRef.current;
+    if (!editorEl) return;
+
+    setDraggingField(field);
+    const editorRect = editorEl.getBoundingClientRect();
+    setDragPoint({
+      x: event.clientX - editorRect.left,
+      y: event.clientY - editorRect.top,
+    });
+  }, []);
+
+  // Update drag position
+  const updateDrag = useCallback((event: React.MouseEvent | MouseEvent) => {
+    if (!draggingField) return;
+    const editorEl = editorRef.current;
+    if (!editorEl) return;
+
+    const editorRect = editorEl.getBoundingClientRect();
+    setDragPoint({
+      x: event.clientX - editorRect.left,
+      y: event.clientY - editorRect.top,
+    });
+  }, [draggingField]);
+
+  // Finish drag - check if over a region
+  const finishDrag = useCallback((event: React.MouseEvent | MouseEvent) => {
+    if (!draggingField || !currentCase) {
+      setDraggingField(null);
+      setDragPoint(null);
+      return;
+    }
+
+    // Check if dropped over any region marker
+    const regionIds = Object.keys(regionRefs.current);
+    let targetRegion: DocumentRegion | null = null;
+
+    for (const regionId of regionIds) {
+      const regionEl = regionRefs.current[regionId];
+      if (regionEl) {
+        const rect = regionEl.getBoundingClientRect();
+        if (
+          event.clientX >= rect.left &&
+          event.clientX <= rect.right &&
+          event.clientY >= rect.top &&
+          event.clientY <= rect.bottom
+        ) {
+          targetRegion = currentCase.regions.find(r => r.id === regionId) || null;
+          break;
+        }
+      }
+    }
+
+    if (targetRegion) {
+      // Check if link already exists
+      const existingLink = currentCase.links.find(
+        l => l.field === draggingField && l.docType === targetRegion!.docType
+      );
+
+      if (!existingLink) {
+        // Create new link
+        const newLink: EvidenceLink = {
+          field: draggingField,
+          docType: targetRegion.docType,
+          region: targetRegion.id,
+          value: currentCase.fields[draggingField] || '',
+          status: 'linked',
+        };
+
+        setCases(prev => prev.map(c => {
+          if (c.id === caseId) {
+            return { ...c, links: [...c.links, newLink] };
+          }
+          return c;
+        }));
+      }
+    }
+
+    setDraggingField(null);
+    setDragPoint(null);
+  }, [draggingField, currentCase, caseId, setCases]);
+
+  // Add document region marker
+  const addDocumentRegion = useCallback((docType: DocumentType, event: React.MouseEvent) => {
+    const docViewerEl = docViewerRef.current;
+    if (!docViewerEl) return;
+
+    const rect = docViewerEl.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * 100;
+    const y = ((event.clientY - rect.top) / rect.height) * 100;
+
+    const newRegion: DocumentRegion = {
+      id: `region-${Date.now()}`,
+      docType,
+      x,
+      y,
+    };
+
+    setCases(prev => prev.map(c => {
+      if (c.id === caseId) {
+        return { ...c, regions: [...c.regions, newRegion] };
+      }
+      return c;
+    }));
+
+    setSelectedRegion(newRegion.id);
+  }, [caseId, setCases]);
+
+  // Remove link
+  const removeLink = useCallback((field: DeclarantField, docType: DocumentType) => {
+    setCases(prev => prev.map(c => {
+      if (c.id === caseId) {
+        return {
+          ...c,
+          links: c.links.filter(l => !(l.field === field && l.docType === docType)),
+        };
+      }
+      return c;
+    }));
+  }, [caseId, setCases]);
+
+  // Remove region
+  const removeRegion = useCallback((regionId: string) => {
+    setCases(prev => prev.map(c => {
+      if (c.id === caseId) {
+        return {
+          ...c,
+          regions: c.regions.filter(r => r.id !== regionId),
+          links: c.links.filter(l => l.region !== regionId),
+        };
+      }
+      return c;
+    }));
+    setSelectedRegion(null);
+  }, [caseId, setCases]);
+
+  // Mouse event handlers
+  useEffect(() => {
+    if (draggingField) {
+      const handleMouseMove = (e: MouseEvent) => updateDrag(e);
+      const handleMouseUp = (e: MouseEvent) => finishDrag(e);
+
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [draggingField, updateDrag, finishDrag]);
+
+  if (!currentCase) {
+    return (
+      <div className="dashboard-container">
+        <div className="dashboard-card">
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+            </div>
+            <h3 className="empty-state-title">CASE NOT FOUND</h3>
+            <p className="empty-state-text">The requested case could not be located.</p>
+            <button className="btn btn-primary" onClick={onBack}>Go Back to Dashboard</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const userInitials = user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+
+  const handleFieldEdit = (field: DeclarantField) => {
+    setEditingField(field);
+    setEditValue(currentCase.fields[field]);
+  };
+
+  const handleFieldSave = (field: DeclarantField, value: string) => {
+    setCases(prev => prev.map(c => {
+      if (c.id === caseId) {
+        return {
+          ...c,
+          fields: { ...c.fields, [field]: value }
+        };
+      }
+      return c;
+    }));
+    setEditingField(null);
+    setEditValue('');
+  };
+
+  const handleFieldCancel = () => {
+    setEditingField(null);
+    setEditValue('');
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files) return;
+
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target?.result as string;
+        const newDoc: UploadedDoc = {
+          name: file.name,
+          docType: activeDocTab,
+          dataUrl,
+        };
+        setCases(prev => prev.map(c => {
+          if (c.id === caseId) {
+            return { ...c, docs: [...c.docs, newDoc] };
+          }
+          return c;
+        }));
+      };
+      reader.readAsDataURL(file);
+    });
+    event.target.value = '';
+  };
+
+  const handleAddComment = (text: string) => {
+    if (!text.trim()) return;
+    const newComment = {
+      author: user.name,
+      text: text.trim(),
+      timestamp: new Date(),
+    };
+    setCases(prev => prev.map(c => {
+      if (c.id === caseId) {
+        return { ...c, comments: [...c.comments, newComment] };
+      }
+      return c;
+    }));
+    setNewCommentText('');
+  };
+
+  const handleSubmitCase = () => {
+    setShowSubmitModal(true);
+  };
+
+  const confirmSubmit = () => {
+    setCases(prev => prev.map(c => {
+      if (c.id === caseId) {
+        return { ...c, status: 'ready_review' };
+      }
+      return c;
+    }));
+    setNotifications(prev => [...prev, {
+      id: `notif-${Date.now()}`,
+      message: `${currentCase?.title || 'Case'} has been submitted for review`,
+      caseId,
+      timestamp: new Date(),
+      read: false,
+    }]);
+    setShowSubmitModal(false);
+    onBack();
+  };
+
+  const currentDocs = currentCase.docs.filter(d => d.docType === activeDocTab);
+  const hasDocs = currentCase.docs.length > 0;
+
+  return (
+    <div className="dashboard-container">
+      <div className="dashboard-card">
+        <header className="dashboard-header">
+          <button className="btn-back" onClick={onBack} aria-label="Go back to dashboard">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5"></path>
+              <path d="M12 19l-7-7 7-7"></path>
+            </svg>
+          </button>
+          <h1 className="dashboard-title">{currentCase.title.toUpperCase()}</h1>
+          <div className="user-avatar-wrapper">
+            <button className="user-avatar" title={user.name} onClick={onBack}>
+              {userInitials}
+            </button>
+          </div>
+        </header>
+        <div className="header-divider"></div>
+
+        <main className="editor-main">
+          <div className="editor-panels" ref={editorRef}>
+            {/* SVG ARROW OVERLAY */}
+            <svg className="editor-svg-overlay">
+              <defs>
+                {/* Blue arrowhead for established links */}
+                <marker
+                  id="arrowhead-blue"
+                  markerWidth="10"
+                  markerHeight="7"
+                  refX="9"
+                  refY="3.5"
+                  orient="auto"
+                >
+                  <polygon points="0 0, 10 3.5, 0 7" fill="#2f6fd4" />
+                </marker>
+                {/* Amber arrowhead for dragging */}
+                <marker
+                  id="arrowhead-amber"
+                  markerWidth="10"
+                  markerHeight="7"
+                  refX="9"
+                  refY="3.5"
+                  orient="auto"
+                >
+                  <polygon points="0 0, 10 3.5, 0 7" fill="#f59e0b" />
+                </marker>
+              </defs>
+
+              {/* Persistent link arrows */}
+              {currentCase.links.map(link => {
+                const fieldPos = getFieldPosition(link.field);
+                const regionPos = getRegionPosition(link.region);
+                if (!fieldPos || !regionPos) return null;
+
+                const pathD = generatePath(fieldPos, regionPos);
+                const midX = (fieldPos.x + regionPos.x) / 2;
+                const midY = (fieldPos.y + regionPos.y) / 2;
+
+                return (
+                  <g key={`${link.field}-${link.docType}-${link.region}`}>
+                    <path
+                      d={pathD}
+                      className={`link-line ${link.status === 'conflict' ? 'link-line-conflict' : ''}`}
+                      markerEnd="url(#arrowhead-blue)"
+                    />
+                    {/* Pill label at midpoint */}
+                    <g className="link-label-group" onClick={() => removeLink(link.field, link.docType)}>
+                      <rect
+                        x={midX - 40}
+                        y={midY - 10}
+                        width="80"
+                        height="20"
+                        rx="10"
+                        className="link-label-bg"
+                      />
+                      <text
+                        x={midX}
+                        y={midY + 4}
+                        textAnchor="middle"
+                        className="link-label-text"
+                      >
+                        {FIELD_LABELS[link.field]}
+                      </text>
+                    </g>
+                    {/* Conflict marker */}
+                    {link.status === 'conflict' && (
+                      <g transform={`translate(${midX + 50}, ${midY})`}>
+                        <circle r="10" fill="#ef4444" />
+                        <path
+                          d="M-4 -4 L4 4 M-4 4 L4 -4"
+                          stroke="white"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                        />
+                      </g>
+                    )}
+                  </g>
                 );
               })}
-            </div>
-            <div className="linking-right">
-              <div className="doc-tabs">
-                {req6DocNames.map((docName, idx) => (
-                  <button key={docName} className={idx === activeDocIndex ? 'active' : ''} onClick={() => setActiveDocIndex(idx)}>
-                    {docName}
-                  </button>
-                ))}
+
+              {/* Drag in progress arrow */}
+              {draggingField && dragPoint && (() => {
+                const fieldPos = getFieldPosition(draggingField);
+                if (!fieldPos) return null;
+                const pathD = generatePath(fieldPos, dragPoint);
+                return (
+                  <path
+                    d={pathD}
+                    className="link-line-dragging"
+                    markerEnd="url(#arrowhead-amber)"
+                  />
+                );
+              })()}
+            </svg>
+
+            {/* LEFT PANEL - DECLARANT */}
+            <div className="editor-panel declarant-panel">
+              <div className="panel-header">
+                <h2 className="panel-title">DECLARANT</h2>
               </div>
-              <div className="invoice-box">
-                <div className="pdf-header">{req6ActiveDocName || 'No uploaded PDF selected'}</div>
-                {req6PdfUrl ? (
-                  <div
-                    className={`req6-pdf-stage ${isPlacingRegion ? 'placing' : ''}`}
-                    onClick={(e) => {
-                      if (!isPlacingRegion) return;
-                      const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                      const xPct = ((e.clientX - rect.left) / rect.width) * 100;
-                      const yPct = ((e.clientY - rect.top) / rect.height) * 100;
-                      addRegionMarkerAt(Math.max(0, Math.min(100, xPct)), Math.max(0, Math.min(100, yPct)));
-                    }}
-                    onMouseMove={(e) => {
-                      if (!isPlacingRegion) return;
-                      const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                      const xPct = ((e.clientX - rect.left) / rect.width) * 100;
-                      const yPct = ((e.clientY - rect.top) / rect.height) * 100;
-                      setPlacingPoint({ xPct: Math.max(0, Math.min(100, xPct)), yPct: Math.max(0, Math.min(100, yPct)) });
-                    }}
-                    onMouseLeave={() => {
-                      if (isPlacingRegion) setPlacingPoint(null);
-                    }}
-                  >
-                    <iframe title="Req6 active PDF" src={req6PdfUrl} className="req6-pdf-frame" />
-                    <div className="req6-annotation-layer">
-                      {visibleTargets.map((row) => (
-                        <button
-                          key={`mk-${row.id}`}
-                          ref={(el) => {
-                            targetRefs.current[row.id] = el as HTMLDivElement | null;
-                          }}
-                          data-target-id={row.id}
-                          className={`req6-marker ${selectedTargetId === row.id ? 'active' : ''}`}
-                          style={{ left: `${row.xPct}%`, top: `${row.yPct}%`, width: `${row.sizePct}%`, height: `${row.sizePct}%` }}
-                          aria-label={row.label}
-                          title={row.label}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedTargetId(row.id);
-                          }}
-                        />
-                      ))}
-                      {isPlacingRegion && placingPoint ? (
-                        <div
-                          className="req6-marker req6-marker-ghost"
-                          style={{ left: `${placingPoint.xPct}%`, top: `${placingPoint.yPct}%`, width: `${regionSizePct}%`, height: `${regionSizePct}%` }}
-                        />
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
-                {!req6ActiveDocName ? (
-                  <p className="inline-note">No file uploaded. Upload PDFs in Req 5 to start linking evidence.</p>
-                ) : (
-                  <>
-                    <div className="row">
-                      <button onClick={() => setIsPlacingRegion(true)}>Add Region Marker</button>
-                      <label className="inline-slider">
-                        Circle size
-                        <input
-                          type="range"
-                          min={4}
-                          max={20}
-                          value={regionSizePct}
-                          onChange={(e) => setRegionSizePct(Number(e.target.value))}
-                        />
-                        <span>{regionSizePct}%</span>
-                      </label>
-                      <span className="inline-note">
-                        {isPlacingRegion ? 'Click on the PDF preview to place marker.' : 'No predetermined values are shown for uploaded PDFs.'}
-                      </span>
-                    </div>
-                    {selectedTargetId ? (
-                      <div className="row">
-                        <label className="inline-slider">
-                          Selected marker size
+              <div className="panel-divider"></div>
+              <div className="declarant-fields">
+                {(Object.keys(FIELD_LABELS) as DeclarantField[]).map((field, idx) => {
+                  const hasLink = currentCase.links.some(l => l.field === field);
+                  return (
+                    <div key={field} className="declarant-row">
+                      {editingField === field ? (
+                        <div className="field-edit-mode">
+                          <span className="field-label">{FIELD_LABELS[field]}</span>
                           <input
-                            type="range"
-                            min={4}
-                            max={20}
-                            value={(visibleTargets.find((t) => t.id === selectedTargetId)?.sizePct ?? regionSizePct)}
-                            onChange={(e) => updateSelectedRegionSize(Number(e.target.value))}
+                            type="text"
+                            className="field-input"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            autoFocus
                           />
-                          <span>{visibleTargets.find((t) => t.id === selectedTargetId)?.sizePct ?? regionSizePct}%</span>
-                        </label>
-                        <button onClick={deleteSelectedRegion}>Delete Selected Region</button>
-                      </div>
-                    ) : null}
-                    {visibleTargets.length === 0 ? <p className="inline-note">No region markers yet.</p> : null}
-                    {visibleTargets.map((row) => (
-                      <div
-                        key={row.id}
-                        data-target-id={row.id}
-                        className={`evidence-row ${selectedTargetId === row.id ? 'active' : ''}`}
-                        onClick={() => setSelectedTargetId(row.id)}
-                      >
-                        <strong>{row.label}</strong>
-                        <span>{row.value}</span>
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
-              <div className="row">
-                <button
-                  className="btn-main"
-                  disabled={!req6ActiveDocName}
-                  onClick={() => {
-                    createLinkFromTarget(selectedField, selectedTargetId);
-                  }}
-                >
-                  Link Selected Field to Highlighted Section
-                </button>
-                <span className="inline-note">Drag from left handle to a row on the right PDF content.</span>
+                          <div className="field-actions">
+                            <button className="btn-icon btn-save" onClick={() => handleFieldSave(field, editValue)} aria-label="Save field">
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M20 6L9 17l-5-5"></path>
+                              </svg>
+                            </button>
+                            <button className="btn-icon btn-cancel" onClick={handleFieldCancel} aria-label="Cancel editing">
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M18 6L6 18M6 6l12 12"></path>
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          className="field-view-mode"
+                          ref={(el) => { fieldRefs.current[field] = el; }}
+                        >
+                          <span className="field-label">{FIELD_LABELS[field]}</span>
+                          <span className="field-value">{currentCase.fields[field] || '—'}</span>
+                          <button className="btn-icon btn-edit" onClick={() => handleFieldEdit(field)} aria-label={`Edit ${FIELD_LABELS[field]}`}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+                            </svg>
+                          </button>
+                          <div
+                            className={`drag-handle ${hasLink ? 'has-link' : ''} ${draggingField === field ? 'dragging' : ''}`}
+                            onMouseDown={(e) => startFieldDrag(field, e)}
+                          >
+                            <span className="drag-circle"></span>
+                          </div>
+                        </div>
+                      )}
+                      {idx < Object.keys(FIELD_LABELS).length - 1 && <div className="field-separator"></div>}
+                    </div>
+                  );
+                })}
               </div>
             </div>
-          </div>
-          <ul className="clean-list">
-            {links.map((l, idx) => (
-              <li key={`${l.field}-${l.documentName}-${idx}`}>
-                {fieldLabels[l.field]} to {l.documentName} ({l.region}) = "{l.evidenceValue}"
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
 
-      {activeReq === 'Req 7' ? (
-        <section className="p5176-card">
-          <h2>Req 7 - Send-file validation</h2>
-          <div className="req-kicker">
-            <span className={`status-pill ${validationIssues.length > 0 ? 'pill-returned' : 'pill-submit'}`}>
-              {validationIssues.length > 0 ? 'Blocked' : 'Ready'}
-            </span>
-            <span className="req-note">Checks: missing values, missing links, and value/evidence mismatches.</span>
-          </div>
-          <button className="btn-main" onClick={() => setSendModalOpen(true)}>Send Files</button>
-          {validationIssues.length > 0 ? (
-            <ul className="errors clean-list">
-              {validationIssues.map((issue) => (
-                <li key={issue}>{issue}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="ok">Ready to send: all checks passed.</p>
-          )}
-          {sendModalOpen ? (
-            <div className="send-modal-overlay">
-              <div className="send-modal">
-                <div className="send-modal-head">
-                  <h3>Send files</h3>
-                  <button onClick={() => setSendModalOpen(false)}>x</button>
+            {/* RIGHT PANEL - DOCUMENTS */}
+            <div className="editor-panel documents-panel">
+              <div className="panel-header">
+                <h2 className="panel-title">DOCUMENTS</h2>
+              </div>
+              <div className="panel-divider"></div>
+
+              {!hasDocs ? (
+                <div className="upload-zone">
+                  <div className="upload-icon">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <path d="M17 21H7a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4z"></path>
+                      <path d="M12 8v8"></path>
+                      <path d="M8 12h8"></path>
+                    </svg>
+                  </div>
+                  <p className="upload-text">Drag & Drop files here or click below</p>
+                  <label className="btn btn-primary upload-btn">
+                    Upload Files
+                    <input
+                      type="file"
+                      multiple
+                      accept=".pdf,.png,.jpg,.jpeg"
+                      onChange={handleFileUpload}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
                 </div>
-                {validationIssues.length > 0 ? (
-                  <>
-                    <div className="send-warning">
-                      <span className="status-pill pill-returned">Warning</span>
-                      <strong>Issues found before sending</strong>
-                    </div>
-                    <ul className="clean-list errors">
-                      {validationIssues.map((issue) => (
-                        <li key={`send-${issue}`}>{issue}</li>
-                      ))}
-                    </ul>
-                    <label className="checkbox-row">
-                      <input
-                        type="checkbox"
-                        checked={allowSendWithExplanation}
-                        onChange={(e) => setAllowSendWithExplanation(e.target.checked)}
-                      />
-                      Add explanation and send with exceptions
-                    </label>
-                    {allowSendWithExplanation ? (
-                      <textarea
-                        className="send-explanation"
-                        value={sendExplanation}
-                        onChange={(e) => setSendExplanation(e.target.value)}
-                        placeholder="Explain why this case should still be sent."
-                      />
-                    ) : null}
-                  </>
-                ) : (
-                  <p className="ok">No blocking issues. This case is ready to move to Ready for Review.</p>
-                )}
-                <div className="send-modal-actions">
-                  <button onClick={() => setSendModalOpen(false)}>Cancel</button>
-                  <button
-                    className="btn-main"
-                    onClick={confirmSendFiles}
-                    disabled={validationIssues.length > 0 && (!allowSendWithExplanation || !sendExplanation.trim())}
+              ) : (
+                <div className="docs-content">
+                  <div className="doc-tabs">
+                    {DOC_TABS.map(tab => (
+                      <button
+                        key={tab.type}
+                        className={`doc-tab ${activeDocTab === tab.type ? 'active' : ''}`}
+                        onClick={() => setActiveDocTab(tab.type)}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div
+                    className="doc-viewer"
+                    ref={docViewerRef}
+                    onClick={(e) => {
+                      // Only add region if clicking on the document area, not on existing regions
+                      if (currentDocs.length > 0 && (e.target as HTMLElement).closest('.region-marker') === null) {
+                        addDocumentRegion(activeDocTab, e);
+                      }
+                    }}
                   >
-                    Send Files
+                    {currentDocs.length === 0 ? (
+                      <div className="doc-empty">
+                        <p>No {activeDocTab} uploaded</p>
+                        <label className="btn btn-sm btn-primary">
+                          Upload
+                          <input
+                            type="file"
+                            multiple
+                            accept=".pdf,.png,.jpg,.jpeg"
+                            onChange={handleFileUpload}
+                            style={{ display: 'none' }}
+                          />
+                        </label>
+                      </div>
+                    ) : (
+                      <div className="doc-preview">
+                        {currentDocs[0].dataUrl.startsWith('data:application/pdf') ? (
+                          <iframe src={currentDocs[0].dataUrl} title="Document Preview" className="pdf-frame"></iframe>
+                        ) : (
+                          <img src={currentDocs[0].dataUrl} alt={currentDocs[0].name} className="doc-image" />
+                        )}
+
+                        {/* Document Region Markers */}
+                        {currentCase.regions
+                          .filter(r => r.docType === activeDocTab)
+                          .map(region => {
+                            const linkedField = currentCase.links.find(l => l.region === region.id);
+                            return (
+                              <div
+                                key={region.id}
+                                ref={(el) => { regionRefs.current[region.id] = el; }}
+                                className={`region-marker ${selectedRegion === region.id ? 'selected' : ''} ${linkedField ? 'linked' : ''}`}
+                                style={{
+                                  left: `${region.x}%`,
+                                  top: `${region.y}%`,
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedRegion(selectedRegion === region.id ? null : region.id);
+                                }}
+                                onDoubleClick={(e) => {
+                                  e.stopPropagation();
+                                  removeRegion(region.id);
+                                }}
+                                title={linkedField ? `Linked to: ${FIELD_LABELS[linkedField.field]}` : 'Click to select, double-click to remove'}
+                              >
+                                <span className="region-marker-inner"></span>
+                                {linkedField && (
+                                  <span className="region-marker-label">{FIELD_LABELS[linkedField.field]}</span>
+                                )}
+                              </div>
+                            );
+                          })}
+
+                        {/* Instruction hint when doc is loaded */}
+                        {currentDocs.length > 0 && currentCase.regions.filter(r => r.docType === activeDocTab).length === 0 && (
+                          <div className="doc-hint">
+                            Click anywhere on the document to place a region marker
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Comments Section */}
+              <div className="comments-section">
+                <div className="comments-header">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                  <span>Comments</span>
+                </div>
+                <div className="comments-list">
+                  {currentCase.comments.length === 0 ? (
+                    <p className="comments-empty">No comments...</p>
+                  ) : (
+                    currentCase.comments.map((comment, idx) => (
+                      <div key={idx} className="comment-item">
+                        <div className="comment-author">{comment.author}</div>
+                        <div className="comment-text">{comment.text}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="comment-input-row">
+                  <input
+                    type="text"
+                    className="comment-input"
+                    placeholder="Add a comment..."
+                    value={newCommentText}
+                    onChange={(e) => setNewCommentText(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddComment(newCommentText)}
+                  />
+                  <button className="btn-send" onClick={() => handleAddComment(newCommentText)} aria-label="Send comment">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="22" y1="2" x2="11" y2="13"></line>
+                      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
                   </button>
                 </div>
               </div>
-            </div>
-          ) : null}
-        </section>
-      ) : null}
 
-      {activeReq === 'Req 8' ? (
-        <section className="p5176-card">
-          <h2>Req 8 - Review matrix</h2>
-          <div className="req-kicker">
-            <span className="status-pill pill-review">Matrix</span>
-            <span className="req-note">Rows are declarant fields, columns are supporting documents.</span>
+              {/* Submit Button */}
+              <div className="submit-area">
+                <button className="btn btn-success btn-submit" onClick={handleSubmitCase} aria-label="Submit case for review">
+                  Submit Case
+                </button>
+              </div>
+            </div>
           </div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Field</th>
-                  {displayDocNames.slice(0, 3).map((docName) => (
-                    <th key={docName}>{docName}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {(Object.keys(fieldLabels) as Array<keyof DeclarantFields>).map((field, r) => (
-                  <tr key={field}>
-                    <td>{fieldLabels[field]}</td>
-                    {matrixRows[r].map((state, c) => (
-                      <td key={`${field}-${c}`} className={`cell-${state}`}>{state}</td>
+        </main>
+      </div>
+
+      {/* Submit Confirmation Modal */}
+      {showSubmitModal && (
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <h3 className="modal-title">Send files</h3>
+            <div className="modal-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+              </svg>
+            </div>
+            <p className="modal-status">READY to send. Files verified.</p>
+            <p className="modal-question">Proceed to send these files?</p>
+            <div className="modal-actions">
+              <button className="btn btn-modal-cancel" onClick={() => setShowSubmitModal(false)}>
+                Cancel
+              </button>
+              <button className="btn btn-modal-confirm" onClick={confirmSubmit}>
+                Send Files
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============== REVIEW MATRIX PAGE ==============
+
+interface ReviewMatrixPageProps {
+  user: User;
+  caseId: string;
+  cases: Case[];
+  setCases: React.Dispatch<React.SetStateAction<Case[]>>;
+  setNotifications: React.Dispatch<React.SetStateAction<Notification[]>>;
+  inspectingCell: { field: DeclarantField; docType: DocumentType } | null;
+  setInspectingCell: React.Dispatch<React.SetStateAction<{ field: DeclarantField; docType: DocumentType } | null>>;
+  showReturnModal: boolean;
+  setShowReturnModal: React.Dispatch<React.SetStateAction<boolean>>;
+  onBack: () => void;
+}
+
+const MATRIX_FIELDS: DeclarantField[] = [
+  'hsCode', 'originCountry', 'destCountry', 'invoiceAmount', 'netWeight',
+  'grossWeight', 'exitCustoms', 'iban', 'others'
+];
+
+const MATRIX_DOCS: { type: DocumentType; label: string }[] = [
+  { type: 'invoice', label: 'Invoice' },
+  { type: 'packageList', label: 'Package List' },
+  { type: 'atr', label: 'ATR' },
+  { type: 'insurance', label: 'Insurance' },
+];
+
+function ReviewMatrixPage({
+  user,
+  caseId,
+  cases,
+  setCases,
+  setNotifications,
+  inspectingCell,
+  setInspectingCell,
+  showReturnModal,
+  setShowReturnModal,
+  onBack
+}: ReviewMatrixPageProps) {
+  const currentCase = cases.find(c => c.id === caseId);
+  const [returnComment, setReturnComment] = useState('');
+  const [newCommentText, setNewCommentText] = useState('');
+  const [editingFieldValue, setEditingFieldValue] = useState('');
+
+  if (!currentCase) {
+    return (
+      <div className="dashboard-container">
+        <div className="dashboard-card">
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+            </div>
+            <h3 className="empty-state-title">CASE NOT FOUND</h3>
+            <p className="empty-state-text">The requested case could not be located.</p>
+            <button className="btn btn-primary" onClick={onBack}>Go Back to Dashboard</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const userInitials = user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+
+  // Get cell status for a field/docType combination
+  const getCellStatus = (field: DeclarantField, docType: DocumentType): 'linked' | 'conflict' | 'none' => {
+    const link = currentCase.links.find(l => l.field === field && l.docType === docType);
+    if (!link) return 'none';
+    return link.status === 'conflict' ? 'conflict' : 'linked';
+  };
+
+  // Count stats for sidebar
+  const linkedCount = currentCase.links.filter(l => l.status === 'linked').length;
+  const conflictCount = currentCase.links.filter(l => l.status === 'conflict').length;
+  const staleCount = currentCase.links.filter(l => l.status === 'stale').length;
+  const editingCount = 0; // Placeholder - could track fields being edited
+
+  const handleCellClick = (field: DeclarantField, docType: DocumentType) => {
+    setEditingFieldValue(currentCase.fields[field] || '');
+    setInspectingCell({ field, docType });
+  };
+
+  const handleAddComment = (text: string) => {
+    if (!text.trim()) return;
+    const newComment = {
+      author: user.name,
+      text: text.trim(),
+      timestamp: new Date(),
+    };
+    setCases(prev => prev.map(c => {
+      if (c.id === caseId) {
+        return { ...c, comments: [...c.comments, newComment] };
+      }
+      return c;
+    }));
+    setNewCommentText('');
+  };
+
+  const handleReturn = () => {
+    setCases(prev => prev.map(c => {
+      if (c.id === caseId) {
+        const returnCommentObj = returnComment.trim() ? {
+          author: user.name,
+          text: `[RETURNED] ${returnComment.trim()}`,
+          timestamp: new Date(),
+        } : null;
+        return {
+          ...c,
+          status: 'returned' as CaseStatus,
+          comments: returnCommentObj ? [...c.comments, returnCommentObj] : c.comments,
+        };
+      }
+      return c;
+    }));
+    setNotifications(prev => [...prev, {
+      id: `notif-${Date.now()}`,
+      message: `${currentCase?.title || 'Case'} has been returned for corrections`,
+      caseId,
+      timestamp: new Date(),
+      read: false,
+    }]);
+    setShowReturnModal(false);
+    setReturnComment('');
+    onBack();
+  };
+
+  const handleSubmit = () => {
+    const newStatus = user.role === 'ceo' ? 'completed' : 'ready_review';
+    setCases(prev => prev.map(c => {
+      if (c.id === caseId) {
+        return { ...c, status: newStatus as CaseStatus };
+      }
+      return c;
+    }));
+    setNotifications(prev => [...prev, {
+      id: `notif-${Date.now()}`,
+      message: user.role === 'ceo'
+        ? `${currentCase?.title || 'Case'} has been submitted to customs`
+        : `${currentCase?.title || 'Case'} has been sent to CEO for approval`,
+      caseId,
+      timestamp: new Date(),
+      read: false,
+    }]);
+    onBack();
+  };
+
+  const handleSaveFieldValue = () => {
+    if (!inspectingCell) return;
+    setCases(prev => prev.map(c => {
+      if (c.id === caseId) {
+        return {
+          ...c,
+          fields: { ...c.fields, [inspectingCell.field]: editingFieldValue }
+        };
+      }
+      return c;
+    }));
+  };
+
+  // Get linked region for the inspecting cell
+  const getLinkedRegion = () => {
+    if (!inspectingCell) return null;
+    const link = currentCase.links.find(l => l.field === inspectingCell.field && l.docType === inspectingCell.docType);
+    if (!link) return null;
+    return currentCase.regions.find(r => r.id === link.region);
+  };
+
+  const linkedRegion = getLinkedRegion();
+
+  return (
+    <div className="dashboard-container">
+      <div className="dashboard-card">
+        <header className="dashboard-header">
+          <button className="btn-back" onClick={onBack} aria-label="Go back to dashboard">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5"></path>
+              <path d="M12 19l-7-7 7-7"></path>
+            </svg>
+          </button>
+          <h1 className="dashboard-title">CASE #{currentCase.id.split('-')[1]?.slice(-4) || '0000'} • {currentCase.title.toUpperCase()}</h1>
+          <div className="user-avatar-wrapper">
+            <button className="user-avatar" title={user.name} onClick={onBack}>
+              {userInitials}
+            </button>
+          </div>
+        </header>
+        <div className="header-divider"></div>
+
+        <main className="matrix-main">
+          <div className="matrix-layout">
+            {/* LEFT: Matrix Table */}
+            <div className="matrix-panel">
+              <table className="matrix-table">
+                <thead>
+                  <tr>
+                    <th className="matrix-corner"></th>
+                    {MATRIX_DOCS.map(doc => (
+                      <th key={doc.type} className="matrix-col-header">{doc.label}</th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      ) : null}
+                </thead>
+                <tbody>
+                  {MATRIX_FIELDS.map(field => (
+                    <tr key={field}>
+                      <td className="matrix-row-header">{FIELD_LABELS[field]}</td>
+                      {MATRIX_DOCS.map(doc => {
+                        const status = getCellStatus(field, doc.type);
+                        return (
+                          <td
+                            key={doc.type}
+                            className={`matrix-cell matrix-cell-${status}`}
+                            onClick={() => handleCellClick(field, doc.type)}
+                          >
+                            {status === 'none' && (
+                              <span className="matrix-icon matrix-icon-none">✕</span>
+                            )}
+                            {status === 'linked' && (
+                              <span className="matrix-icon matrix-icon-linked">✓</span>
+                            )}
+                            {status === 'conflict' && (
+                              <span className="matrix-icon matrix-icon-conflict">!</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-      {activeReq === 'Req 9' ? (
-        <section className="p5176-card">
-          <h2>Req 9 - Field inspection modal</h2>
-          <div className="req-kicker">
-            <span className="status-pill pill-review">Inspection</span>
-            <span className="req-note">Open any field to inspect value, link status, and evidence region.</span>
-          </div>
-          <div className="row">
-            {(Object.keys(fieldLabels) as Array<keyof DeclarantFields>).map((field) => (
-              <button key={field} onClick={() => setModalField(field)}>
-                Inspect {fieldLabels[field]}
-              </button>
-            ))}
-          </div>
-          {modalField ? (
-            <div className="modal">
-              <h3>{fieldLabels[modalField]}</h3>
-              <p>Declared value: {fields[modalField] || '(empty)'}</p>
-              <p>Link status: {links.some((l) => l.field === modalField) ? 'Linked' : 'Not linked'}</p>
-              <ul>
-                {links.filter((l) => l.field === modalField).map((l, idx) => (
-                  <li key={`${l.documentName}-${idx}`}>
-                    {l.documentName} | {l.region} | "{l.evidenceValue}"
-                  </li>
-                ))}
-              </ul>
-              {modalPdfUrl ? (
-                <div className="modal-pdf-region">
-                  <h4>Linked region with PDF view</h4>
-                  <div className="modal-pdf-stage">
-                    <iframe title="Req9 linked PDF preview" src={modalPdfUrl} className="req6-pdf-frame" />
-                    {modalTarget ? (
-                      <div
-                        className="req6-marker active req9-marker"
-                        style={{
-                          left: `${modalTarget.xPct}%`,
-                          top: `${modalTarget.yPct}%`,
-                          width: `${modalTarget.sizePct}%`,
-                          height: `${modalTarget.sizePct}%`,
-                        }}
-                        title={`Matched marker: ${modalTarget.label}`}
-                      />
-                    ) : null}
-                  </div>
+            {/* RIGHT: Sidebar */}
+            <div className="matrix-sidebar">
+              <div className="matrix-status-summary">
+                <div className="status-stat">
+                  <span className="status-stat-icon status-stat-linked">✓</span>
+                  <span className="status-stat-label">Linked</span>
+                  <span className="status-stat-value">{linkedCount}</span>
                 </div>
-              ) : null}
-              <button onClick={() => setModalField(null)}>Close</button>
-            </div>
-          ) : null}
-        </section>
-      ) : null}
+                <div className="status-stat">
+                  <span className="status-stat-icon status-stat-conflict">!</span>
+                  <span className="status-stat-label">Conflict</span>
+                  <span className="status-stat-value">{conflictCount}</span>
+                </div>
+                <div className="status-stat">
+                  <span className="status-stat-icon status-stat-stale">⟳</span>
+                  <span className="status-stat-label">Stale</span>
+                  <span className="status-stat-value">{staleCount}</span>
+                </div>
+                <div className="status-stat">
+                  <span className="status-stat-icon status-stat-editing">✎</span>
+                  <span className="status-stat-label">Editing</span>
+                  <span className="status-stat-value">{editingCount}</span>
+                </div>
+              </div>
 
-      {activeReq === 'Req 10' ? (
-        <section className="p5176-card">
-          <h2>Req 10 - Real-time comments, notifications, and routing</h2>
-          <div className="req-kicker">
-            <span className="status-pill pill-review">Realtime Simulation</span>
-            <span className="req-note">Routing and chat update immediately without page refresh.</span>
-          </div>
-          <div className="row req10-actionsRow">
-            <button onClick={() => routeCase('Ready for Review')} disabled={dashboardRole !== 'Case Reviewer'}>
-              Send to Lead Reviewer (Case Reviewer)
-            </button>
-            <button onClick={() => routeCase('Returned for Changes')} disabled={dashboardRole !== 'Lead Reviewer'}>
-              Return to Case Reviewer (Lead Reviewer)
-            </button>
-            <button onClick={() => routeCase('Ready to Submit')} disabled={dashboardRole !== 'Lead Reviewer'}>
-              Submit to CEO (Lead Reviewer)
-            </button>
-            <button onClick={() => routeCase('Submitted')} disabled={dashboardRole !== 'CEO'}>
-              Submit to Customs (CEO only)
-            </button>
-          </div>
-          <div className="form-grid req10-commentRow">
-            <label>
-              New comment
-              <input value={newComment} onChange={(e) => setNewComment(e.target.value)} placeholder="Type message..." />
-            </label>
-            <button onClick={sendComment}>Send Comment</button>
-          </div>
-          <div className="dash-grid req10-livePanels">
-            <div>
-              <h3>Live comments</h3>
-              <ul>{comments.map((c, idx) => <li key={`${c}-${idx}`}>{c}</li>)}</ul>
+              <button className="btn btn-primary btn-add-files" aria-label="Add files to case">
+                + Add Files
+              </button>
+
+              <div className="matrix-comments-box">
+                <div className="comments-header">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                  <span>Comments</span>
+                </div>
+                <div className="comments-list">
+                  {currentCase.comments.length === 0 ? (
+                    <p className="comments-empty">No comments...</p>
+                  ) : (
+                    currentCase.comments.map((comment, idx) => (
+                      <div key={idx} className="comment-item">
+                        <div className="comment-author">{comment.author}</div>
+                        <div className="comment-text">{comment.text}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="comment-input-row">
+                  <input
+                    type="text"
+                    className="comment-input"
+                    placeholder="Add a comment..."
+                    value={newCommentText}
+                    onChange={(e) => setNewCommentText(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddComment(newCommentText)}
+                  />
+                  <button className="btn-send" onClick={() => handleAddComment(newCommentText)} aria-label="Send comment">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="22" y1="2" x2="11" y2="13"></line>
+                      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div className="matrix-actions">
+                <button className="btn btn-danger btn-return" onClick={() => setShowReturnModal(true)} aria-label="Return case for corrections">
+                  Return
+                </button>
+                <button className="btn btn-success btn-submit-review" onClick={handleSubmit} aria-label={user.role === 'ceo' ? 'Submit case to customs' : 'Submit case to CEO'}>
+                  {user.role === 'ceo' ? 'Submit to Customs' : 'Submit to CEO'}
+                </button>
+              </div>
             </div>
-            <div>
-              <h3>Live notifications</h3>
-              <ul>{notifications.map((n, idx) => <li key={`${n}-${idx}`}>{n}</li>)}</ul>
-            </div>
           </div>
-        </section>
-      ) : null}
-        </section>
+        </main>
       </div>
-      {toastMessage ? <div className="bottom-toast">{toastMessage}</div> : null}
+
+      {/* Field Inspection Popup */}
+      {inspectingCell && (
+        <div className="modal-overlay" onClick={() => setInspectingCell(null)}>
+          <div className="inspection-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="inspection-header">
+              <h3 className="inspection-title">EDITING: {FIELD_LABELS[inspectingCell.field]}</h3>
+              <button className="inspection-close" onClick={() => setInspectingCell(null)}>
+                ✕
+              </button>
+            </div>
+            <div className="inspection-content">
+              <div className="inspection-field-row">
+                <input
+                  type="text"
+                  className="inspection-input"
+                  value={editingFieldValue}
+                  onChange={(e) => setEditingFieldValue(e.target.value)}
+                  placeholder="Enter value..."
+                />
+                <button className="btn btn-sm btn-primary" onClick={handleSaveFieldValue}>
+                  Save
+                </button>
+              </div>
+              <button className="btn btn-sm btn-outline inspection-evidence-btn">
+                Evidence Linked
+              </button>
+              <div className="inspection-preview">
+                {linkedRegion ? (
+                  <div className="inspection-preview-content">
+                    <div className="inspection-preview-placeholder">
+                      <span>PDF Preview Area</span>
+                    </div>
+                    <div
+                      className="inspection-region-marker"
+                      style={{ left: `${linkedRegion.x}%`, top: `${linkedRegion.y}%` }}
+                    >
+                      <span className="region-marker-inner"></span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="inspection-preview-empty">
+                    <p>No evidence linked for this field</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Return Modal */}
+      {showReturnModal && (
+        <div className="modal-overlay" onClick={() => setShowReturnModal(false)}>
+          <div className="return-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="return-modal-header">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                <line x1="12" y1="9" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              </svg>
+              <h3 className="return-modal-title">RETURN THE FILES</h3>
+            </div>
+            <textarea
+              className="return-modal-textarea"
+              placeholder="Add comments explaining why the case is being returned..."
+              value={returnComment}
+              onChange={(e) => setReturnComment(e.target.value)}
+            ></textarea>
+            <div className="return-modal-actions">
+              <button className="btn btn-modal-cancel" onClick={() => setShowReturnModal(false)}>
+                Cancel
+              </button>
+              <button className="btn btn-danger" onClick={handleReturn}>
+                Return
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
