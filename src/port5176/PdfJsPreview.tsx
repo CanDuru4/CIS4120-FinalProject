@@ -40,9 +40,15 @@ export function PdfJsPreview({
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
   const loadTaskRef = useRef<{ destroy?: () => void } | null>(null);
   const onPdfLayoutRef = useRef(onPdfLayout);
-  onPdfLayoutRef.current = onPdfLayout;
   const fitModeRef = useRef(fitMode);
-  fitModeRef.current = fitMode;
+
+  useEffect(() => {
+    onPdfLayoutRef.current = onPdfLayout;
+  }, [onPdfLayout]);
+
+  useEffect(() => {
+    fitModeRef.current = fitMode;
+  }, [fitMode]);
 
   useEffect(() => {
     const root = rootRef.current;

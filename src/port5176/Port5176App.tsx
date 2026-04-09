@@ -340,6 +340,10 @@ type Case = {
   comments: Array<{ author: string; text: string; timestamp: Date }>;
   /** Review matrix: manually conflict-flagged cells, keys `field:docId` */
   matrixManualConflicts: string[];
+  /** Writer kanban lane when the case was sent to lead review (for CEO customs notifications). */
+  writerExitLaneAtReviewSubmit?: 'drafting' | 'missing_ev';
+  /** Set when lead reviewer submits the case to the CEO queue. */
+  passedLeadReviewBeforeCeo?: boolean;
 };
 
 const DEFAULT_CASE_FIELDS: Record<DeclarantField, string> = {
@@ -539,6 +543,147 @@ function cloneCaseDeep(c: Case): Case {
   });
 }
 
+// ============== MATRIX CELL HELPERS (shared: writer stale lane + review matrix) ==============
+
+const MATRIX_FIELDS: DeclarantField[] = [
+  'hsCode', 'originCountry', 'destCountry', 'invoiceAmount', 'netWeight',
+  'grossWeight', 'exitCustoms', 'iban', 'others'
+];
+
+/** Sentinel doc column id when a case has no attachments — matrix cells stay clickable for declarant edits. */
+const MATRIX_NO_FILE_COLUMN_ID = '__matrix_no_files__';
+
+type MatrixCellVisual = 'none' | 'na' | 'stale' | 'orange' | 'linked' | 'conflict';
+
+function matrixCellKey(field: DeclarantField, docId: string): string {
+  return `${field}:${docId}`;
+}
+
+function getMatchingLinksForMatrixCell(c: Case, field: DeclarantField, docId: string): EvidenceLink[] {
+  return c.links.filter(l => l.field === field && l.docId === docId);
+}
+
+/** Matrix cell color/icon: gray empty, N/A when linked on another doc, orange value+no link anywhere, green linked, stale, red conflict. */
+function getMatrixCellVisual(
+  c: Case,
+  field: DeclarantField,
+  docId: string,
+  fieldValueOverrides?: Partial<Record<DeclarantField, string>>,
+): MatrixCellVisual {
+  const key = matrixCellKey(field, docId);
+  const manual = (c.matrixManualConflicts ?? []).includes(key);
+  const rawVal = fieldValueOverrides?.[field] ?? c.fields[field] ?? '';
+  const hasValue = rawVal.trim().length > 0;
+  const matching = getMatchingLinksForMatrixCell(c, field, docId);
+
+  if (manual) return 'conflict';
+  if (matching.some(l => l.status === 'conflict')) return 'conflict';
+  if (matching.length === 0 && c.links.some(l => l.field === field)) return 'na';
+  if (hasValue && matching.length === 0) return 'orange';
+  if (matching.some(l => l.status === 'stale')) return 'stale';
+  if (hasValue && matching.some(l => l.status === 'linked')) return 'linked';
+  if (!hasValue && matching.length === 0) return 'none';
+  if (!hasValue && matching.length > 0) return 'stale';
+  return 'none';
+}
+
+function countMatrixCells(
+  c: Case,
+  visual: MatrixCellVisual,
+  fieldValueOverrides?: Partial<Record<DeclarantField, string>>,
+  columnDocIds?: string[],
+): number {
+  const cols = columnDocIds ?? c.docs.map(d => d.id);
+  let n = 0;
+  for (const field of MATRIX_FIELDS) {
+    for (const docId of cols) {
+      if (getMatrixCellVisual(c, field, docId, fieldValueOverrides) === visual) n++;
+    }
+  }
+  return n;
+}
+
+/** True if the review matrix would flag missing/stale evidence: stale link, or declarant value with no link (orange). */
+function caseWriterMatrixShowsMissingEvidence(c: Case): boolean {
+  const cols = c.docs.length > 0 ? c.docs.map(d => d.id) : [MATRIX_NO_FILE_COLUMN_ID];
+  for (const field of MATRIX_FIELDS) {
+    for (const docId of cols) {
+      const v = getMatrixCellVisual(c, field, docId);
+      if (v === 'stale' || v === 'orange') return true;
+    }
+  }
+  return false;
+}
+
+/** While a case is still with the writer (drafting or returned), matrix stale or unlinked-value cells move it to the Missing ev. column. */
+function upgradeDraftingToMissingEvIfStale(c: Case): Case {
+  if (c.status !== 'drafting' && c.status !== 'returned') return c;
+  if (!caseWriterMatrixShowsMissingEvidence(c)) return c;
+  return { ...c, status: 'missing_ev' };
+}
+
+/** When missing-ev signals are gone, move the case back to drafting (writer kanban). */
+function downgradeMissingEvToDraftIfClear(c: Case): Case {
+  if (c.status !== 'missing_ev') return c;
+  if (caseWriterMatrixShowsMissingEvidence(c)) return c;
+  return { ...c, status: 'drafting' };
+}
+
+/** Apply drafting / returned ↔ missing_ev from evidence matrix rules (writer-facing lanes). */
+function normalizeWriterFacingKanbanStatus(c: Case): Case {
+  if (c.status === 'drafting' || c.status === 'returned') {
+    return upgradeDraftingToMissingEvIfStale(c);
+  }
+  if (c.status === 'missing_ev') {
+    return downgradeMissingEvToDraftIfClear(c);
+  }
+  return c;
+}
+
+function mergePendingMatrixFields(
+  c: Case,
+  pending: Partial<Record<DeclarantField, string>>,
+): Case {
+  const keys = Object.keys(pending) as DeclarantField[];
+  if (keys.length === 0) return c;
+  return { ...c, fields: { ...c.fields, ...pending } };
+}
+
+/**
+ * Fingerprint for “unsaved edits” in the case editor: omits `status` so automatic
+ * drafting ↔ missing_ev kanban moves (evidence matrix rules) do not flip the Not saved hint.
+ */
+function caseEditorDraftDirtyFingerprint(c: Case): string {
+  return JSON.stringify({
+    title: c.title,
+    fields: c.fields,
+    docs: c.docs.map(d => ({ id: d.id, name: d.name, docType: d.docType, dataUrl: d.dataUrl })),
+    links: c.links.map(l => ({
+      field: l.field,
+      docId: l.docId,
+      region: l.region,
+      status: l.status,
+      value: l.value,
+      docType: l.docType,
+    })),
+    regions: c.regions.map(r => ({
+      id: r.id,
+      docId: r.docId,
+      x: r.x,
+      y: r.y,
+      widthPct: r.widthPct,
+      heightPct: r.heightPct,
+      pageNorm: r.pageNorm,
+    })),
+    comments: c.comments.map(cm => ({
+      author: cm.author,
+      text: cm.text,
+      t: cm.timestamp instanceof Date ? cm.timestamp.getTime() : new Date(cm.timestamp).getTime(),
+    })),
+    mm: [...(c.matrixManualConflicts ?? [])].slice().sort(),
+  });
+}
+
 /** Compare case content for “unsaved changes” (excludes id/createdBy/createdAt drift). */
 function caseEditorContentFingerprint(c: Case): string {
   return JSON.stringify({
@@ -724,19 +869,21 @@ export default function Port5176App() {
     setStorageHydrated(true);
   }, []);
 
-  applyRemotePayloadRef.current = (json: string) => {
-    if (json === lastRemotePayloadRef.current) return;
-    lastRemotePayloadRef.current = json;
-    try {
-      const parsed = JSON.parse(json) as PersistedAppBundle;
-      skipPersistOnceRef.current = true;
-      const { cases: hCases, notifications: hNotifs } = hydrateCasesAndNotifications(parsed);
-      setCases(hCases);
-      setNotifications(hNotifs);
-    } catch {
-      skipPersistOnceRef.current = false;
-    }
-  };
+  useLayoutEffect(() => {
+    applyRemotePayloadRef.current = (json: string) => {
+      if (json === lastRemotePayloadRef.current) return;
+      lastRemotePayloadRef.current = json;
+      try {
+        const parsed = JSON.parse(json) as PersistedAppBundle;
+        skipPersistOnceRef.current = true;
+        const { cases: hCases, notifications: hNotifs } = hydrateCasesAndNotifications(parsed);
+        setCases(hCases);
+        setNotifications(hNotifs);
+      } catch {
+        skipPersistOnceRef.current = false;
+      }
+    };
+  }, []);
 
   /** Same-origin realtime: other tabs/windows on this machine + BroadcastChannel for instant delivery */
   const syncChannelRef = useRef<BroadcastChannel | null>(null);
@@ -928,6 +1075,7 @@ export default function Port5176App() {
       )}
       {view === 'matrix' && user && matrixCaseId && (
         <ReviewMatrixPage
+          key={matrixCaseId}
           user={user}
           caseId={matrixCaseId}
           cases={cases}
@@ -1275,6 +1423,16 @@ function kanbanHeaderClassForStatus(s: CaseStatus): string {
   }
 }
 
+/** Next `Case #N` for new drafts; only considers titles that are exactly `Case #number` (ignores e.g. ERDEMIR #4). */
+function nextDefaultCaseTitle(existing: Case[]): string {
+  let max = 0;
+  for (const c of existing) {
+    const m = c.title.trim().match(/^Case\s*#(\d+)\s*$/i);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return `Case #${max + 1}`;
+}
+
 function DashboardPage({
   user,
   cases,
@@ -1293,11 +1451,13 @@ function DashboardPage({
   const [kanbanColumnSelection, setKanbanColumnSelection] = useState<Set<CaseStatus> | null>(null);
   const [showKanbanFilterMenu, setShowKanbanFilterMenu] = useState(false);
   const [kanbanDeleteTarget, setKanbanDeleteTarget] = useState<Case | null>(null);
+  /** Writer dashboard: completed cases collapsed at bottom of the list until expanded */
+  const [writerCompletedExpanded, setWriterCompletedExpanded] = useState(false);
 
   const createCase = () => {
     const newCase: Case = {
       id: `case-${Date.now()}`,
-      title: `Case #${cases.length + 1}`,
+      title: nextDefaultCaseTitle(cases),
       createdBy: user.name,
       createdAt: new Date(),
       status: 'drafting',
@@ -1420,6 +1580,9 @@ function DashboardPage({
 
   // Writer Dashboard - Two Column Layout
   if (user.role === 'writer') {
+    const writerActiveCases = cases.filter(c => c.status !== 'completed');
+    const writerCompletedCases = cases.filter(c => c.status === 'completed');
+
     return (
       <div className="dashboard-container">
         <div className="dashboard-card">
@@ -1487,7 +1650,7 @@ function DashboardPage({
                 <div className="writer-box">
                   <div className="writer-box-header">
                     <div className="writer-box-title-row">
-                      <span className="writer-box-count">{cases.length}</span>
+                      <span className="writer-box-count">{writerActiveCases.length}</span>
                       <span className="writer-box-label">Open Cases</span>
                       {flaggedCount > 0 && (
                         <span className="writer-flagged-badge">{flaggedCount} Flagged</span>
@@ -1495,36 +1658,94 @@ function DashboardPage({
                     </div>
                   </div>
                   <div className="writer-box-divider"></div>
-                  <div className="writer-cases-list">
-                    {cases.length === 0 ? (
-                      <div className="writer-empty-state">
-                        <p>No cases yet. Create your first case to get started.</p>
-                      </div>
-                    ) : (
-                      cases.map(c => {
-                        const statusPill = getStatusPill(c.status);
-                        return (
-                          <div
-                            key={c.id}
-                            className="writer-case-row"
-                            onClick={() => onOpenCase(c.id)}
-                          >
-                            <div className="writer-case-icon">
-                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                <polyline points="14 2 14 8 20 8"></polyline>
-                              </svg>
-                            </div>
-                            <span className="writer-case-name">{c.title}</span>
-                            <span
-                              className="writer-status-pill"
-                              style={{ backgroundColor: statusPill.color }}
+                  <div className="writer-cases-stack">
+                    <div className="writer-cases-list">
+                      {writerActiveCases.length === 0 ? (
+                        <div className="writer-empty-state">
+                          <p>
+                            {writerCompletedCases.length > 0
+                              ? 'No active cases. Completed cases are below.'
+                              : 'No cases yet. Create your first case to get started.'}
+                          </p>
+                        </div>
+                      ) : (
+                        writerActiveCases.map(c => {
+                          const statusPill = getStatusPill(c.status);
+                          return (
+                            <div
+                              key={c.id}
+                              className="writer-case-row"
+                              onClick={() => onOpenCase(c.id)}
                             >
-                              {statusPill.label}
-                            </span>
+                              <div className="writer-case-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                  <polyline points="14 2 14 8 20 8"></polyline>
+                                </svg>
+                              </div>
+                              <span className="writer-case-name">{c.title}</span>
+                              <span
+                                className="writer-status-pill"
+                                style={{ backgroundColor: statusPill.color }}
+                              >
+                                {statusPill.label}
+                              </span>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                    {writerCompletedCases.length > 0 && (
+                      <div className="writer-completed-section">
+                        <button
+                          type="button"
+                          className="writer-completed-toggle"
+                          aria-expanded={writerCompletedExpanded}
+                          onClick={() => setWriterCompletedExpanded(v => !v)}
+                        >
+                          <span>
+                            Completed ({writerCompletedCases.length})
+                            {!writerCompletedExpanded ? ' — click to expand' : ''}
+                          </span>
+                          <span
+                            className={
+                              'writer-completed-chevron' +
+                              (writerCompletedExpanded ? ' writer-completed-chevron--open' : '')
+                            }
+                            aria-hidden
+                          >
+                            ▼
+                          </span>
+                        </button>
+                        {writerCompletedExpanded && (
+                          <div className="writer-cases-list writer-completed-cases-list">
+                            {writerCompletedCases.map(c => {
+                              const statusPill = getStatusPill(c.status);
+                              return (
+                                <div
+                                  key={c.id}
+                                  className="writer-case-row"
+                                  onClick={() => onOpenCase(c.id)}
+                                >
+                                  <div className="writer-case-icon">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                      <polyline points="14 2 14 8 20 8"></polyline>
+                                    </svg>
+                                  </div>
+                                  <span className="writer-case-name">{c.title}</span>
+                                  <span
+                                    className="writer-status-pill"
+                                    style={{ backgroundColor: statusPill.color }}
+                                  >
+                                    {statusPill.label}
+                                  </span>
+                                </div>
+                              );
+                            })}
                           </div>
-                        );
-                      })
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1816,7 +2037,7 @@ function DashboardPage({
   const renderCompletedColumn = () => {
     const laneCases = casesInCompletedColumn();
     const customsCompleted = filterCases('completed');
-    const totalDocs = customsCompleted.reduce((sum, c) => sum + c.docs.length, 0);
+    const submittedToCustomsCount = customsCompleted.length;
     const isCeo = user.role === 'ceo';
 
     if (!isCeo) {
@@ -1845,31 +2066,35 @@ function DashboardPage({
             {pendingCeo.map(c => renderKanbanCard(c))}
             {customsCompleted.length > 0 && (
               <>
-                {customsCompleted.slice(0, 1).map(c => {
-                  const filledFields = getFilledFieldsCount(c);
-                  return (
-                    <div
-                      key={c.id}
-                      className="kanban-card kanban-card-completed"
-                      onClick={() => onOpenCase(c.id)}
-                    >
-                      <div className="kanban-card-header">
-                        <span className="kanban-card-title">{c.title.length > 15 ? c.title.slice(0, 15) + '...' : c.title}</span>
-                      </div>
-                      <div className="kanban-card-author">by {c.createdBy}</div>
-                      <div className="kanban-card-bullets">
-                        <div className="kanban-bullet">
-                          <span className="kanban-bullet-dot" style={{ backgroundColor: '#f59e0b' }}></span>
-                          <span>Fields {filledFields}/10</span>
+                {/* Preview card only while history is collapsed (avoids duplicating row when expanded). */}
+                {!showCompletedHistory &&
+                  customsCompleted.slice(0, 1).map(c => {
+                    const filledFields = getFilledFieldsCount(c);
+                    return (
+                      <div
+                        key={c.id}
+                        className="kanban-card kanban-card-completed"
+                        onClick={() => onOpenCase(c.id)}
+                      >
+                        <div className="kanban-card-header">
+                          <span className="kanban-card-title">
+                            {c.title.length > 15 ? c.title.slice(0, 15) + '...' : c.title}
+                          </span>
                         </div>
-                        <div className="kanban-bullet kanban-bullet-green">
-                          <span className="kanban-bullet-dot" style={{ backgroundColor: '#22c55e' }}></span>
-                          <span>Everything correct</span>
+                        <div className="kanban-card-author">by {c.createdBy}</div>
+                        <div className="kanban-card-bullets">
+                          <div className="kanban-bullet">
+                            <span className="kanban-bullet-dot" style={{ backgroundColor: '#f59e0b' }}></span>
+                            <span>Fields {filledFields}/10</span>
+                          </div>
+                          <div className="kanban-bullet kanban-bullet-green">
+                            <span className="kanban-bullet-dot" style={{ backgroundColor: '#22c55e' }}></span>
+                            <span>Everything correct</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
                 <button
                   type="button"
                   className="kanban-submitted-btn"
@@ -1877,11 +2102,17 @@ function DashboardPage({
                 >
                   {showCompletedHistory ? 'Hide' : 'Show'} submitted documents
                   <br />
-                  <span className="kanban-submitted-count">({totalDocs > 0 ? `${totalDocs} documents` : 'to customs'})</span>
+                  <span className="kanban-submitted-count">
+                    (
+                    {submittedToCustomsCount === 0
+                      ? 'none yet'
+                      : `${submittedToCustomsCount} ${submittedToCustomsCount === 1 ? 'case' : 'cases'} submitted to customs`}
+                    )
+                  </span>
                 </button>
-                {showCompletedHistory && customsCompleted.length > 1 && (
+                {showCompletedHistory && customsCompleted.length > 0 && (
                   <div className="kanban-submission-history">
-                    {customsCompleted.slice(1).map(c => {
+                    {customsCompleted.map(c => {
                       const dateStr = new Date(c.createdAt).toLocaleDateString();
                       return (
                         <div key={c.id} className="kanban-history-item" onClick={() => onOpenCase(c.id)}>
@@ -2255,8 +2486,14 @@ function CaseEditorPage({
   const isEditorDirty = useCallback((): boolean => {
     const baseline = editorBaselineRef.current;
     if (!baseline || !currentCase) return false;
-    return caseEditorContentFingerprint(currentCase) !== caseEditorContentFingerprint(baseline);
+    return caseEditorDraftDirtyFingerprint(currentCase) !== caseEditorDraftDirtyFingerprint(baseline);
   }, [currentCase]);
+
+  /** Mirrors ref-based dirty check for UI (avoid reading refs during render). */
+  const [showEditorUnsavedHint, setShowEditorUnsavedHint] = useState(false);
+  useEffect(() => {
+    setShowEditorUnsavedHint(isEditorDirty());
+  }, [currentCase, isEditorDirty]);
 
   /** Revert to baseline; drop the case entirely if baseline is still an empty writer draft (e.g. new case). */
   const discardEditorToBaseline = useCallback(() => {
@@ -2274,13 +2511,15 @@ function CaseEditorPage({
     setCases(prev => {
       const next = prev.map(c => {
         if (c.id !== caseId) return c;
-        if (c.status === 'returned') return { ...c, status: 'drafting' as const };
-        return c;
+        let u = c;
+        if (u.status === 'returned') u = { ...u, status: 'drafting' as const };
+        return normalizeWriterFacingKanbanStatus(u);
       });
       const cur = next.find(x => x.id === caseId);
       if (cur) editorBaselineRef.current = cloneCaseDeep(cur);
       return next;
     });
+    setShowEditorUnsavedHint(false);
   }, [caseId, setCases]);
 
   const requestEditorBack = useCallback(() => {
@@ -2838,8 +3077,6 @@ function CaseEditorPage({
           document.removeEventListener('mousemove', onMove);
           document.removeEventListener('mouseup', onUp);
           const moved = (ev.clientX - startCX) ** 2 + (ev.clientY - startCY) ** 2 > 36;
-          if (moved) {
-          }
           if (!moved) {
             setSelectedRegion(cur => (cur === region.id ? null : region.id));
           }
@@ -2881,8 +3118,6 @@ function CaseEditorPage({
         document.removeEventListener('mousemove', onMoveLegacy);
         document.removeEventListener('mouseup', onUpLegacy);
         const moved = (ev.clientX - startCX) ** 2 + (ev.clientY - startCY) ** 2 > 36;
-        if (moved) {
-        }
         if (!moved) {
           setSelectedRegion(cur => (cur === region.id ? null : region.id));
         }
@@ -3013,6 +3248,133 @@ function CaseEditorPage({
     }
   }, [caseId, currentCase?.comments.length]);
 
+  const writerSubmitIssues = useMemo(
+    () => (currentCase ? getWriterSubmitIssues(currentCase) : []),
+    [currentCase],
+  );
+  const writerCaseCompletelyEmpty = useMemo(
+    () => (currentCase ? isWriterCaseCompletelyEmpty(currentCase) : true),
+    [currentCase],
+  );
+  const writerCaseHasNoFiles = !currentCase || currentCase.docs.length === 0;
+
+  const canSendSubmitFiles = useMemo(() => {
+    if (!currentCase) return false;
+    if (writerCaseCompletelyEmpty) return false;
+    if (writerCaseHasNoFiles) return false;
+    if (writerSubmitIssues.length === 0) return true;
+    return submitExplanationText.trim().length > 0;
+  }, [
+    currentCase,
+    writerCaseCompletelyEmpty,
+    writerCaseHasNoFiles,
+    writerSubmitIssues.length,
+    submitExplanationText,
+  ]);
+
+  const closeSubmitModal = useCallback(() => {
+    setShowSubmitModal(false);
+    setSubmitExplanationOpen(false);
+    setSubmitExplanationText('');
+  }, []);
+
+  const handleSubmitCase = () => {
+    setSubmitExplanationOpen(false);
+    setSubmitExplanationText('');
+    setShowSubmitModal(true);
+  };
+
+  const confirmSubmit = () => {
+    if (!currentCase || !canSendSubmitFiles) return;
+    const note = submitExplanationText.trim();
+    setCases(prev =>
+      prev.map(c => {
+        if (c.id !== caseId) return c;
+        const writerExitLaneAtReviewSubmit: 'drafting' | 'missing_ev' =
+          c.status === 'missing_ev' ? 'missing_ev' : 'drafting';
+        let next: Case = {
+          ...c,
+          status: 'ready_review',
+          writerExitLaneAtReviewSubmit,
+        };
+        if (note) {
+          next = {
+            ...next,
+            comments: [
+              ...next.comments,
+              {
+                author: user.name,
+                text: `Submission note: ${note}`,
+                timestamp: new Date(),
+              },
+            ],
+          };
+        }
+        return next;
+      }),
+    );
+    setNotifications(prev => [
+      ...prev,
+      {
+        id: `notif-${Date.now()}`,
+        message: `${currentCase.title || 'Case'} has been submitted for review`,
+        caseId,
+        timestamp: new Date(),
+        read: false,
+        audienceRole: 'lead_reviewer',
+      },
+    ]);
+    closeSubmitModal();
+    onBack();
+  };
+
+  const activeDoc =
+    currentCase && activeDocId ? currentCase.docs.find(d => d.id === activeDocId) : undefined;
+  const currentDocs = activeDoc ? [activeDoc] : [];
+  const hasDocs = (currentCase?.docs.length ?? 0) > 0;
+  const activeDocIsPdf =
+    currentDocs.length > 0 && currentDocs[0].dataUrl.startsWith('data:application/pdf');
+
+  useEffect(() => {
+    if (!activeDocIsPdf) {
+      updatePdfLayout(null);
+    }
+  }, [activeDocIsPdf, activeDocId, updatePdfLayout]);
+
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!isEditorDirty()) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [isEditorDirty]);
+
+  const editorStaleFingerprint = useMemo(
+    () => (currentCase ? caseEditorContentFingerprint(currentCase) : ''),
+    [currentCase],
+  );
+
+  useEffect(() => {
+    if (!currentCase || currentCase.id !== caseId) return;
+    setCases(prev => {
+      const idx = prev.findIndex(x => x.id === caseId);
+      if (idx < 0) return prev;
+      const c = prev[idx];
+      let next = c;
+      if (c.status === 'drafting' || c.status === 'returned') {
+        next = upgradeDraftingToMissingEvIfStale(c);
+      } else if (c.status === 'missing_ev') {
+        next = downgradeMissingEvToDraftIfClear(c);
+      }
+      if (next === c) return prev;
+      const out = [...prev];
+      out[idx] = next;
+      return out;
+    });
+  }, [editorStaleFingerprint, caseId, setCases, currentCase]);
+
   if (!currentCase) {
     return (
       <div className="dashboard-container">
@@ -3112,92 +3474,6 @@ function CaseEditorPage({
     setNewCommentText('');
   };
 
-  const writerSubmitIssues = useMemo(
-    () => (currentCase ? getWriterSubmitIssues(currentCase) : []),
-    [currentCase],
-  );
-  const writerCaseCompletelyEmpty = useMemo(
-    () => (currentCase ? isWriterCaseCompletelyEmpty(currentCase) : true),
-    [currentCase],
-  );
-  const writerCaseHasNoFiles = !currentCase || currentCase.docs.length === 0;
-
-  const canSendSubmitFiles = useMemo(() => {
-    if (!currentCase) return false;
-    if (writerCaseCompletelyEmpty) return false;
-    if (writerCaseHasNoFiles) return false;
-    if (writerSubmitIssues.length === 0) return true;
-    return submitExplanationText.trim().length > 0;
-  }, [
-    currentCase,
-    writerCaseCompletelyEmpty,
-    writerCaseHasNoFiles,
-    writerSubmitIssues.length,
-    submitExplanationText,
-  ]);
-
-  const closeSubmitModal = useCallback(() => {
-    setShowSubmitModal(false);
-    setSubmitExplanationOpen(false);
-    setSubmitExplanationText('');
-  }, []);
-
-  const handleSubmitCase = () => {
-    setSubmitExplanationOpen(false);
-    setSubmitExplanationText('');
-    setShowSubmitModal(true);
-  };
-
-  const confirmSubmit = () => {
-    if (!currentCase || !canSendSubmitFiles) return;
-    const note = submitExplanationText.trim();
-    setCases(prev =>
-      prev.map(c => {
-        if (c.id !== caseId) return c;
-        let next: Case = { ...c, status: 'ready_review' };
-        if (note) {
-          next = {
-            ...next,
-            comments: [
-              ...next.comments,
-              {
-                author: user.name,
-                text: `Submission note: ${note}`,
-                timestamp: new Date(),
-              },
-            ],
-          };
-        }
-        return next;
-      }),
-    );
-    setNotifications(prev => [
-      ...prev,
-      {
-        id: `notif-${Date.now()}`,
-        message: `${currentCase.title || 'Case'} has been submitted for review`,
-        caseId,
-        timestamp: new Date(),
-        read: false,
-        audienceRole: 'lead_reviewer',
-      },
-    ]);
-    closeSubmitModal();
-    onBack();
-  };
-
-  const activeDoc = activeDocId ? currentCase.docs.find(d => d.id === activeDocId) : undefined;
-  const currentDocs = activeDoc ? [activeDoc] : [];
-  const hasDocs = currentCase.docs.length > 0;
-  const activeDocIsPdf =
-    currentDocs.length > 0 && currentDocs[0].dataUrl.startsWith('data:application/pdf');
-
-  useEffect(() => {
-    if (!activeDocIsPdf) {
-      updatePdfLayout(null);
-    }
-  }, [activeDocIsPdf, activeDocId, updatePdfLayout]);
-
   return (
     <div className="dashboard-container">
       <div className="dashboard-card">
@@ -3208,7 +3484,14 @@ function CaseEditorPage({
               <path d="M12 19l-7-7 7-7"></path>
             </svg>
           </button>
-          <h1 className="dashboard-title">{currentCase.title.toUpperCase()}</h1>
+          <div className="dashboard-title-block">
+            <h1 className="dashboard-title">{currentCase.title.toUpperCase()}</h1>
+            {showEditorUnsavedHint && (
+              <span className="editor-unsaved-hint" role="status">
+                Not saved
+              </span>
+            )}
+          </div>
           <div className="header-actions editor-matrix-header-actions">
             <div className="notification-wrapper notification-bell-trigger">
               <button
@@ -4118,77 +4401,48 @@ interface ReviewMatrixPageProps {
   onLogout: () => void;
 }
 
-const MATRIX_FIELDS: DeclarantField[] = [
-  'hsCode', 'originCountry', 'destCountry', 'invoiceAmount', 'netWeight',
-  'grossWeight', 'exitCustoms', 'iban', 'others'
-];
-
-type MatrixCellVisual = 'none' | 'na' | 'stale' | 'orange' | 'linked' | 'conflict';
-
-function matrixCellKey(field: DeclarantField, docId: string): string {
-  return `${field}:${docId}`;
-}
-
-function getMatchingLinksForMatrixCell(c: Case, field: DeclarantField, docId: string): EvidenceLink[] {
-  return c.links.filter(l => l.field === field && l.docId === docId);
-}
-
-/** Single evidence link for this field (at most one across all tabs). */
-function resolveLinkedEvidenceForField(
+/** Evidence for matrix cell popup: prefer link on this document column, else any link for the field. */
+function resolveEvidenceForInspection(
   c: Case,
   field: DeclarantField,
-): { doc: UploadedDoc; region: DocumentRegion | null } | null {
-  const link = c.links.find(l => l.field === field);
-  if (!link) return null;
-  const doc = c.docs.find(d => d.id === link.docId);
+  columnDocId: string,
+): {
+  doc: UploadedDoc;
+  region: DocumentRegion | null;
+  crossColumn: boolean;
+} | null {
+  const cellLinks = getMatchingLinksForMatrixCell(c, field, columnDocId);
+  const pick =
+    cellLinks.find(l => l.status === 'linked') ??
+    cellLinks.find(l => l.status === 'stale') ??
+    cellLinks.find(l => l.status === 'conflict') ??
+    cellLinks[0];
+  if (pick) {
+    const doc = c.docs.find(d => d.id === pick.docId);
+    if (!doc) return null;
+    const region =
+      c.regions.find(r => r.id === pick.region && r.docId === pick.docId) ??
+      c.regions.find(r => r.id === pick.region) ??
+      null;
+    return { doc, region, crossColumn: false };
+  }
+  const anyLink = c.links.find(l => l.field === field);
+  if (!anyLink) return null;
+  const doc = c.docs.find(d => d.id === anyLink.docId);
   if (!doc) return null;
   const region =
-    c.regions.find(r => r.id === link.region && r.docId === link.docId) ??
-    c.regions.find(r => r.id === link.region) ??
+    c.regions.find(r => r.id === anyLink.region && r.docId === anyLink.docId) ??
+    c.regions.find(r => r.id === anyLink.region) ??
     null;
-  return { doc, region };
+  return {
+    doc,
+    region,
+    crossColumn: anyLink.docId !== columnDocId,
+  };
 }
 
 function matrixColumnMatchesFieldLink(c: Case, field: DeclarantField, docId: string): boolean {
   return getMatchingLinksForMatrixCell(c, field, docId).length > 0;
-}
-
-/** Matrix cell color/icon: gray empty, N/A when linked on another doc, orange value+no link anywhere, green linked, stale, red conflict. */
-function getMatrixCellVisual(
-  c: Case,
-  field: DeclarantField,
-  docId: string,
-  fieldValueOverrides?: Partial<Record<DeclarantField, string>>,
-): MatrixCellVisual {
-  const key = matrixCellKey(field, docId);
-  const manual = (c.matrixManualConflicts ?? []).includes(key);
-  const rawVal = fieldValueOverrides?.[field] ?? c.fields[field] ?? '';
-  const hasValue = rawVal.trim().length > 0;
-  const matching = getMatchingLinksForMatrixCell(c, field, docId);
-
-  if (manual) return 'conflict';
-  if (matching.some(l => l.status === 'conflict')) return 'conflict';
-  if (matching.length === 0 && c.links.some(l => l.field === field)) return 'na';
-  if (hasValue && matching.length === 0) return 'orange';
-  if (matching.some(l => l.status === 'stale')) return 'stale';
-  if (hasValue && matching.some(l => l.status === 'linked')) return 'linked';
-  if (!hasValue && matching.length === 0) return 'none';
-  if (!hasValue && matching.length > 0) return 'stale';
-  return 'none';
-}
-
-function countMatrixCells(
-  c: Case,
-  visual: MatrixCellVisual,
-  fieldValueOverrides?: Partial<Record<DeclarantField, string>>,
-): number {
-  let n = 0;
-  for (const field of MATRIX_FIELDS) {
-    for (const doc of c.docs) {
-      if (getMatrixCellVisual(c, field, doc.id, fieldValueOverrides) === visual) n++;
-    }
-  }
-  return n;
 }
 
 function ReviewMatrixPage({
@@ -4228,10 +4482,6 @@ function ReviewMatrixPage({
   const [matrixSidebarDocId, setMatrixSidebarDocId] = useState<string | null>(null);
 
   useEffect(() => {
-    matrixDirtyRef.current = false;
-  }, [caseId]);
-
-  useEffect(() => {
     if (!currentCase) return;
     const docs = currentCase.docs;
     if (docs.length === 0) {
@@ -4243,22 +4493,59 @@ function ReviewMatrixPage({
     );
   }, [currentCase?.id, currentCase?.docs]);
 
+  useEffect(() => {
+    if (cases.find(c => c.id === caseId)?.status === 'completed') {
+      setShowReturnModal(false);
+    }
+  }, [caseId, cases, setShowReturnModal]);
+
   const [matrixUnsavedOpen, setMatrixUnsavedOpen] = useState(false);
   const [dontShowMatrixUnsavedAgain, setDontShowMatrixUnsavedAgain] = useState(false);
+  /** Declarant edits confirmed with OK in the inspection modal — applied on “Save draft” (or submit/return). */
+  const [matrixPendingFields, setMatrixPendingFields] = useState<Partial<Record<DeclarantField, string>>>({});
+  /** Last saved-to-store snapshot for this matrix session (discard restores this). */
+  const [matrixSavedSnapshot, setMatrixSavedSnapshot] = useState<Case | null>(null);
+
+  useLayoutEffect(() => {
+    const c = cases.find(x => x.id === caseId);
+    if (c) setMatrixSavedSnapshot(cloneCaseDeep(c));
+    else setMatrixSavedSnapshot(null);
+    setMatrixPendingFields({});
+  }, [caseId]);
 
   const handleMatrixSaveDraft = useCallback(() => {
-    if (inspectingCell) {
-      setCases(prev =>
-        prev.map(c => {
-          if (c.id !== caseId) return c;
-          return { ...c, fields: { ...c.fields, [inspectingCell.field]: editingFieldValue } };
-        }),
-      );
+    const c0 = cases.find(x => x.id === caseId);
+    if (!c0 || c0.status === 'completed') return;
+    const flush: Partial<Record<DeclarantField, string>> = {
+      ...matrixPendingFields,
+      ...(inspectingCell ? { [inspectingCell.field]: editingFieldValue } : {}),
+    };
+    if (Object.keys(flush).length === 0) {
+      const normalized = normalizeWriterFacingKanbanStatus(c0);
+      if (normalized !== c0) {
+        setCases(prev => prev.map(c => (c.id === caseId ? normalized : c)));
+      }
+      setMatrixSavedSnapshot(cloneCaseDeep(normalized));
+      setInspectingCell(null);
+      return;
     }
-    matrixDirtyRef.current = false;
-  }, [caseId, inspectingCell, editingFieldValue, setCases]);
+    let merged: Case | null = null;
+    setCases(prev => {
+      const next = prev.map(c => {
+        if (c.id !== caseId) return c;
+        const withFields = { ...c, fields: { ...c.fields, ...flush } };
+        merged = normalizeWriterFacingKanbanStatus(withFields);
+        return merged;
+      });
+      return next;
+    });
+    if (merged) setMatrixSavedSnapshot(cloneCaseDeep(merged));
+    setMatrixPendingFields({});
+    setInspectingCell(null);
+  }, [caseId, cases, matrixPendingFields, inspectingCell, editingFieldValue, setCases, setInspectingCell]);
 
   const requestOpenReturnModal = useCallback(() => {
+    if (cases.find(c => c.id === caseId)?.status === 'completed') return;
     if (skipUnsavedLeaveStored() || !matrixDirtyRef.current) {
       setShowReturnModal(true);
       return;
@@ -4266,7 +4553,7 @@ function ReviewMatrixPage({
     setDontShowMatrixUnsavedAgain(false);
     matrixPendingLeaveRef.current = 'return';
     setMatrixUnsavedOpen(true);
-  }, [setShowReturnModal]);
+  }, [setShowReturnModal, cases, caseId]);
 
   const requestMatrixBackNav = useCallback(() => {
     if (skipUnsavedLeaveStored() || !matrixDirtyRef.current) {
@@ -4290,12 +4577,19 @@ function ReviewMatrixPage({
 
   const matrixUnsavedDontSaveAndContinue = useCallback(() => {
     if (dontShowMatrixUnsavedAgain) persistSkipUnsavedLeave();
+    const snap = matrixSavedSnapshot;
+    if (snap) {
+      const restored = cloneCaseDeep(snap);
+      setCases(prev => prev.map(c => (c.id === caseId ? restored : c)));
+    }
+    setMatrixPendingFields({});
+    setInspectingCell(null);
     const t = matrixPendingLeaveRef.current;
     matrixPendingLeaveRef.current = null;
     setMatrixUnsavedOpen(false);
     if (t === 'return') setShowReturnModal(true);
     else if (t === 'back') onBack();
-  }, [dontShowMatrixUnsavedAgain, onBack, setShowReturnModal]);
+  }, [dontShowMatrixUnsavedAgain, caseId, matrixSavedSnapshot, onBack, setCases, setInspectingCell, setShowReturnModal]);
 
   useEffect(() => {
     if (!showUserMenu) return;
@@ -4356,6 +4650,91 @@ function ReviewMatrixPage({
     };
   }, [inspectingCell]);
 
+  const matrixInspectionContextCase =
+    currentCase != null ? mergePendingMatrixFields(currentCase, matrixPendingFields) : null;
+
+  const inspectionLinkedEvidence = inspectingCell && matrixInspectionContextCase
+    ? resolveEvidenceForInspection(
+        matrixInspectionContextCase,
+        inspectingCell.field,
+        inspectingCell.docId,
+      )
+    : null;
+
+  const inspectionCellMatchesLink =
+    !!inspectingCell &&
+    !!matrixInspectionContextCase &&
+    matrixColumnMatchesFieldLink(
+      matrixInspectionContextCase,
+      inspectingCell.field,
+      inspectingCell.docId,
+    );
+
+  const inspectionEvidenceIsPdf = !!inspectionLinkedEvidence?.doc?.dataUrl?.startsWith(
+    'data:application/pdf',
+  );
+
+  useEffect(() => {
+    updateInspectionPdfLayout(null);
+  }, [
+    inspectingCell?.field,
+    inspectingCell?.docId,
+    inspectionLinkedEvidence?.doc?.id,
+    updateInspectionPdfLayout,
+  ]);
+
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!matrixDirtyRef.current) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, []);
+
+  /** Same as case editor: keep `missing_ev` ↔ `drafting` in sync with matrix evidence rules when reviewers edit here. */
+  const matrixKanbanEvidenceFingerprint = useMemo(() => {
+    const c = cases.find(x => x.id === caseId);
+    if (!c) return '';
+    const w = mergePendingMatrixFields(c, matrixPendingFields);
+    return caseEditorContentFingerprint(w);
+  }, [cases, caseId, matrixPendingFields]);
+
+  useEffect(() => {
+    setCases(prev => {
+      const idx = prev.findIndex(x => x.id === caseId);
+      if (idx < 0) return prev;
+      const row = prev[idx];
+      if (row.status === 'completed') return prev;
+      let next = row;
+      if (row.status === 'drafting' || row.status === 'returned') {
+        next = upgradeDraftingToMissingEvIfStale(row);
+      } else if (row.status === 'missing_ev') {
+        next = downgradeMissingEvToDraftIfClear(row);
+      }
+      if (next === row) return prev;
+      const out = [...prev];
+      out[idx] = next;
+      return out;
+    });
+  }, [matrixKanbanEvidenceFingerprint, caseId, setCases]);
+
+  /** Match case editor: omit `status` so auto missing_ev ↔ drafting (matrix + writer rules) does not look “unsaved”. */
+  const showMatrixUnsavedHint = useMemo(() => {
+    const c = cases.find(x => x.id === caseId);
+    if (!c || c.status === 'completed') return false;
+    if (!matrixSavedSnapshot) return false;
+    const w = mergePendingMatrixFields(c, matrixPendingFields);
+    return (
+      caseEditorDraftDirtyFingerprint(w) !== caseEditorDraftDirtyFingerprint(matrixSavedSnapshot)
+    );
+  }, [cases, caseId, matrixPendingFields, matrixSavedSnapshot]);
+
+  useEffect(() => {
+    matrixDirtyRef.current = showMatrixUnsavedHint;
+  }, [showMatrixUnsavedHint]);
+
   if (!currentCase) {
     return (
       <div className="dashboard-container">
@@ -4377,29 +4756,36 @@ function ReviewMatrixPage({
     );
   }
 
+  const matrixReadOnly = currentCase.status === 'completed';
+
   const userInitials = user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   const myMatrixNotifications = notifications.filter(n => notificationVisibleToUser(n, user));
   const unreadMatrixBellCount = myMatrixNotifications.filter(n => !n.read).length;
 
-  const matrixFieldOverrides: Partial<Record<DeclarantField, string>> | undefined = inspectingCell
-    ? { [inspectingCell.field]: editingFieldValue }
-    : undefined;
-
-  const linkedCount = countMatrixCells(currentCase, 'linked', matrixFieldOverrides);
-  const conflictCount = countMatrixCells(currentCase, 'conflict', matrixFieldOverrides);
-  const staleCount = countMatrixCells(currentCase, 'stale', matrixFieldOverrides);
-
   const matrixDocs = currentCase.docs;
+  const matrixColumnDocIds =
+    matrixDocs.length > 0 ? matrixDocs.map(d => d.id) : [MATRIX_NO_FILE_COLUMN_ID];
+
+  const matrixLiveFieldOverrides: Partial<Record<DeclarantField, string>> = {
+    ...matrixPendingFields,
+    ...(inspectingCell ? { [inspectingCell.field]: editingFieldValue } : {}),
+  };
+
+  const linkedCount = countMatrixCells(currentCase, 'linked', matrixLiveFieldOverrides, matrixColumnDocIds);
+  const conflictCount = countMatrixCells(currentCase, 'conflict', matrixLiveFieldOverrides, matrixColumnDocIds);
+  const staleCount = countMatrixCells(currentCase, 'stale', matrixLiveFieldOverrides, matrixColumnDocIds);
   const matrixManyCols = matrixDocs.length > 8;
   const matrixScrollMinWidth =
     matrixManyCols && matrixDocs.length > 0 ? 172 + matrixDocs.length * 122 : undefined;
 
   const handleCellClick = (field: DeclarantField, docId: string) => {
-    setEditingFieldValue(currentCase.fields[field] || '');
+    const v = matrixPendingFields[field] ?? currentCase.fields[field] ?? '';
+    setEditingFieldValue(v);
     setInspectingCell({ field, docId });
   };
 
   const handleAddComment = (text: string) => {
+    if (matrixReadOnly) return;
     if (!text.trim()) return;
     const newComment = {
       author: user.name,
@@ -4412,11 +4798,11 @@ function ReviewMatrixPage({
       }
       return c;
     }));
-    matrixDirtyRef.current = true;
     setNewCommentText('');
   };
 
   const handleMatrixFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (matrixReadOnly) return;
     const files = event.target.files;
     if (!files) return;
     const slotsLeft = Math.max(0, MAX_DOCUMENTS_PER_CASE - currentCase.docs.length);
@@ -4437,7 +4823,6 @@ function ReviewMatrixPage({
         setCases(prev =>
           prev.map(c => (c.id === caseId ? { ...c, docs: [...c.docs, newDoc] } : c)),
         );
-        matrixDirtyRef.current = true;
         if (file === lastFileInBatch) {
           setMatrixSidebarDocId(newId);
         }
@@ -4448,21 +4833,27 @@ function ReviewMatrixPage({
   };
 
   const handleReturn = () => {
+    if (matrixReadOnly) return;
+    const fieldFlush: Partial<Record<DeclarantField, string>> = {
+      ...matrixPendingFields,
+      ...(inspectingCell ? { [inspectingCell.field]: editingFieldValue } : {}),
+    };
     setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        const returnCommentObj = returnComment.trim() ? {
-          author: user.name,
-          text: `[RETURNED] ${returnComment.trim()}`,
-          timestamp: new Date(),
-        } : null;
-        return {
-          ...c,
-          status: 'returned' as CaseStatus,
-          comments: returnCommentObj ? [...c.comments, returnCommentObj] : c.comments,
-        };
-      }
-      return c;
+      if (c.id !== caseId) return c;
+      const merged = { ...c, fields: { ...c.fields, ...fieldFlush } };
+      const returnCommentObj = returnComment.trim() ? {
+        author: user.name,
+        text: `[RETURNED] ${returnComment.trim()}`,
+        timestamp: new Date(),
+      } : null;
+      return {
+        ...merged,
+        status: 'returned' as CaseStatus,
+        comments: returnCommentObj ? [...merged.comments, returnCommentObj] : merged.comments,
+      };
     }));
+    setMatrixPendingFields({});
+    setInspectingCell(null);
     setNotifications(prev => [...prev, {
       id: `notif-${Date.now()}`,
       message: `${currentCase?.title || 'Case'} has been returned for corrections`,
@@ -4473,19 +4864,26 @@ function ReviewMatrixPage({
     }]);
     setShowReturnModal(false);
     setReturnComment('');
-    matrixDirtyRef.current = false;
     onBack();
   };
 
   const handleSubmit = () => {
+    if (matrixReadOnly) return;
     const isCeo = user.role === 'ceo';
     const newStatus: CaseStatus = isCeo ? 'completed' : 'ceo_review';
+    const snapshot = currentCase;
+    const fieldFlush: Partial<Record<DeclarantField, string>> = {
+      ...matrixPendingFields,
+      ...(inspectingCell ? { [inspectingCell.field]: editingFieldValue } : {}),
+    };
     setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        return { ...c, status: newStatus };
-      }
-      return c;
+      if (c.id !== caseId) return c;
+      const merged = { ...c, fields: { ...c.fields, ...fieldFlush } };
+      if (isCeo) return { ...merged, status: newStatus };
+      return { ...merged, status: newStatus, passedLeadReviewBeforeCeo: true };
     }));
+    setMatrixPendingFields({});
+    setInspectingCell(null);
     if (!isCeo) {
       setNotifications(prev => [...prev, {
         id: `notif-${Date.now()}`,
@@ -4495,26 +4893,54 @@ function ReviewMatrixPage({
         read: false,
         audienceRole: 'ceo',
       }]);
+    } else if (snapshot) {
+      const lane = snapshot.writerExitLaneAtReviewSubmit;
+      const passedLead = snapshot.passedLeadReviewBeforeCeo === true;
+      const legacy = lane === undefined;
+      const notifyWriter =
+        lane === 'drafting' || lane === 'missing_ev' || legacy;
+      const notifyLead =
+        lane === 'drafting' || lane === 'missing_ev' || passedLead || legacy;
+      const title = snapshot.title || 'Case';
+      const ts = Date.now();
+      setNotifications(prev => {
+        const next = [...prev];
+        if (notifyWriter) {
+          next.push({
+            id: `notif-${ts}-cw`,
+            message: `${title} was submitted to customs by the CEO.`,
+            caseId,
+            timestamp: new Date(),
+            read: false,
+            audienceRole: 'writer',
+          });
+        }
+        if (notifyLead) {
+          next.push({
+            id: `notif-${ts}-lr`,
+            message: `${title} was submitted to customs by the CEO.`,
+            caseId,
+            timestamp: new Date(),
+            read: false,
+            audienceRole: 'lead_reviewer',
+          });
+        }
+        return next;
+      });
     }
-    matrixDirtyRef.current = false;
     onBack();
   };
 
-  const handleSaveFieldValue = () => {
+  /** Apply inspection input to pending edits only — persists when “Save draft” (or submit/return) runs. */
+  const handleInspectionOk = () => {
+    if (matrixReadOnly) return;
     if (!inspectingCell) return;
-    setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        return {
-          ...c,
-          fields: { ...c.fields, [inspectingCell.field]: editingFieldValue }
-        };
-      }
-      return c;
-    }));
-    matrixDirtyRef.current = true;
+    setMatrixPendingFields(prev => ({ ...prev, [inspectingCell.field]: editingFieldValue }));
+    setInspectingCell(null);
   };
 
   const toggleInspectionManualConflict = () => {
+    if (matrixReadOnly) return;
     if (!inspectingCell) return;
     const key = matrixCellKey(inspectingCell.field, inspectingCell.docId);
     setCases(prev =>
@@ -4527,29 +4953,7 @@ function ReviewMatrixPage({
         return { ...c, matrixManualConflicts: list };
       }),
     );
-    matrixDirtyRef.current = true;
   };
-
-  const inspectionLinkedEvidence = inspectingCell
-    ? resolveLinkedEvidenceForField(currentCase, inspectingCell.field)
-    : null;
-
-  const inspectionCellMatchesLink =
-    !!inspectingCell &&
-    matrixColumnMatchesFieldLink(currentCase, inspectingCell.field, inspectingCell.docId);
-
-  const inspectionEvidenceIsPdf = !!inspectionLinkedEvidence?.doc?.dataUrl?.startsWith(
-    'data:application/pdf',
-  );
-
-  useEffect(() => {
-    updateInspectionPdfLayout(null);
-  }, [
-    inspectingCell?.field,
-    inspectingCell?.docId,
-    inspectionLinkedEvidence?.doc?.id,
-    updateInspectionPdfLayout,
-  ]);
 
   const inspectionHasValue = editingFieldValue.trim().length > 0;
   const inspectionEvidenceStatusLabel = !inspectionHasValue
@@ -4585,7 +4989,14 @@ function ReviewMatrixPage({
               <path d="M12 19l-7-7 7-7"></path>
             </svg>
           </button>
-          <h1 className="dashboard-title">{currentCase.title.toUpperCase()}</h1>
+          <div className="dashboard-title-block">
+            <h1 className="dashboard-title">{currentCase.title.toUpperCase()}</h1>
+            {showMatrixUnsavedHint && (
+              <span className="editor-unsaved-hint" role="status">
+                Not saved
+              </span>
+            )}
+          </div>
           <div className="header-actions editor-matrix-header-actions">
             <div className="notification-wrapper notification-bell-trigger">
               <button
@@ -4640,6 +5051,11 @@ function ReviewMatrixPage({
           </div>
         </header>
         <div className="header-divider"></div>
+        {matrixReadOnly && (
+          <p className="matrix-readonly-banner" role="status">
+            Submitted to customs — this case is read-only. No edits, uploads, or comments can be added.
+          </p>
+        )}
 
         <main className="matrix-main">
           <div className="matrix-layout">
@@ -4678,7 +5094,7 @@ function ReviewMatrixPage({
                       <th className="matrix-corner" />
                       {matrixDocs.length === 0 ? (
                         <th className="matrix-col-header matrix-col-header--empty" scope="colgroup">
-                          Add attachments to the case — each file becomes a matrix column (scroll horizontally when there are more than eight).
+                          No files yet — click a cell to edit declarant values, or add attachments (each file becomes a column).
                         </th>
                       ) : (
                         matrixDocs.map(doc => (
@@ -4698,46 +5114,41 @@ function ReviewMatrixPage({
                     {MATRIX_FIELDS.map(field => (
                       <tr key={field}>
                         <td className="matrix-row-header">{FIELD_LABELS[field]}</td>
-                        {matrixDocs.length === 0 ? (
-                          <td className="matrix-cell matrix-cell-none">
-                            <span className="matrix-icon matrix-icon-none">—</span>
-                          </td>
-                        ) : (
-                          matrixDocs.map(doc => {
-                            const visual = getMatrixCellVisual(
-                              currentCase,
-                              field,
-                              doc.id,
-                              matrixFieldOverrides,
-                            );
-                            return (
-                              <td
-                                key={doc.id}
-                                className={`matrix-cell matrix-cell-${visual}`}
-                                onClick={() => handleCellClick(field, doc.id)}
-                              >
-                                {visual === 'none' && (
-                                  <span className="matrix-icon matrix-icon-none">✕</span>
-                                )}
-                                {visual === 'na' && (
-                                  <span className="matrix-cell-na-label">N/A</span>
-                                )}
-                                {visual === 'orange' && (
-                                  <span className="matrix-icon matrix-icon-orange">!</span>
-                                )}
-                                {visual === 'stale' && (
-                                  <span className="matrix-icon matrix-icon-stale">⟳</span>
-                                )}
-                                {visual === 'linked' && (
-                                  <span className="matrix-icon matrix-icon-linked">✓</span>
-                                )}
-                                {visual === 'conflict' && (
-                                  <span className="matrix-icon matrix-icon-conflict">!</span>
-                                )}
-                              </td>
-                            );
-                          })
-                        )}
+                        {matrixColumnDocIds.map(docId => {
+                          const visual = getMatrixCellVisual(
+                            currentCase,
+                            field,
+                            docId,
+                            matrixLiveFieldOverrides,
+                          );
+                          return (
+                            <td
+                              key={docId}
+                              className={`matrix-cell matrix-cell-${visual}`}
+                              onClick={() => handleCellClick(field, docId)}
+                              title="View declarant value and evidence"
+                            >
+                              {visual === 'none' && (
+                                <span className="matrix-icon matrix-icon-none">✕</span>
+                              )}
+                              {visual === 'na' && (
+                                <span className="matrix-cell-na-label">N/A</span>
+                              )}
+                              {visual === 'orange' && (
+                                <span className="matrix-icon matrix-icon-orange">!</span>
+                              )}
+                              {visual === 'stale' && (
+                                <span className="matrix-icon matrix-icon-stale">⟳</span>
+                              )}
+                              {visual === 'linked' && (
+                                <span className="matrix-icon matrix-icon-linked">✓</span>
+                              )}
+                              {visual === 'conflict' && (
+                                <span className="matrix-icon matrix-icon-conflict">!</span>
+                              )}
+                            </td>
+                          );
+                        })}
                       </tr>
                     ))}
                   </tbody>
@@ -4766,14 +5177,20 @@ function ReviewMatrixPage({
               </div>
 
               <label
-                className="btn btn-primary btn-add-files"
-                title={`Add files (max ${MAX_DOCUMENTS_PER_CASE} per case)`}
+                className={`btn btn-primary btn-add-files${matrixReadOnly ? ' matrix-control-disabled' : ''}`}
+                title={
+                  matrixReadOnly
+                    ? 'Read-only: submitted to customs'
+                    : `Add files (max ${MAX_DOCUMENTS_PER_CASE} per case)`
+                }
+                aria-disabled={matrixReadOnly}
               >
                 + Add Files
                 <input
                   type="file"
                   multiple
                   accept=".pdf,.png,.jpg,.jpeg"
+                  disabled={matrixReadOnly}
                   onChange={handleMatrixFileUpload}
                   style={{ display: 'none' }}
                 />
@@ -4806,14 +5223,20 @@ function ReviewMatrixPage({
                           ))}
                         </div>
                         <label
-                          className="matrix-doc-tab-add"
-                          title={`Add files (max ${MAX_DOCUMENTS_PER_CASE} per case)`}
+                          className={`matrix-doc-tab-add${matrixReadOnly ? ' matrix-control-disabled' : ''}`}
+                          title={
+                            matrixReadOnly
+                              ? 'Read-only: submitted to customs'
+                              : `Add files (max ${MAX_DOCUMENTS_PER_CASE} per case)`
+                          }
                           aria-label="Add files"
+                          aria-disabled={matrixReadOnly}
                         >
                           <input
                             type="file"
                             multiple
                             accept=".pdf,.png,.jpg,.jpeg"
+                            disabled={matrixReadOnly}
                             onChange={handleMatrixFileUpload}
                             style={{ display: 'none' }}
                           />
@@ -4879,12 +5302,20 @@ function ReviewMatrixPage({
                     <input
                       type="text"
                       className="comment-input"
-                      placeholder="Add a comment..."
+                      placeholder={matrixReadOnly ? 'Comments are closed (submitted to customs)' : 'Add a comment...'}
                       value={newCommentText}
+                      disabled={matrixReadOnly}
+                      readOnly={matrixReadOnly}
                       onChange={(e) => setNewCommentText(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleAddComment(newCommentText)}
                     />
-                    <button className="btn-send" onClick={() => handleAddComment(newCommentText)} aria-label="Send comment">
+                    <button
+                      type="button"
+                      className="btn-send"
+                      disabled={matrixReadOnly}
+                      onClick={() => handleAddComment(newCommentText)}
+                      aria-label="Send comment"
+                    >
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <line x1="22" y1="2" x2="11" y2="13"></line>
                         <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
@@ -4894,14 +5325,35 @@ function ReviewMatrixPage({
                 </div>
 
                 <div className="matrix-actions">
-                  <button type="button" className="btn btn-danger btn-return" onClick={requestOpenReturnModal} aria-label="Return case for corrections">
+                  <button
+                    type="button"
+                    className="btn btn-danger btn-return matrix-actions-return-btn"
+                    disabled={matrixReadOnly}
+                    onClick={requestOpenReturnModal}
+                    aria-label="Return case for corrections"
+                  >
                     Return
                   </button>
                   <div className="matrix-actions-submit-group">
-                    <button type="button" className="btn btn-outline btn-save-draft" onClick={handleMatrixSaveDraft}>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-save-draft"
+                      disabled={matrixReadOnly}
+                      onClick={handleMatrixSaveDraft}
+                    >
                       Save draft
                     </button>
-                    <button type="button" className="btn btn-success btn-submit-review" onClick={handleSubmit} aria-label={user.role === 'ceo' ? 'Submit case to customs' : 'Submit case to CEO'}>
+                    <button
+                      type="button"
+                      className="btn btn-success btn-submit-review"
+                      disabled={matrixReadOnly}
+                      onClick={handleSubmit}
+                      aria-label={
+                        user.role === 'ceo'
+                          ? `Submit “${currentCase.title}” to customs`
+                          : `Submit “${currentCase.title}” to CEO`
+                      }
+                    >
                       {user.role === 'ceo' ? 'Submit to Customs' : 'Submit to CEO'}
                     </button>
                   </div>
@@ -4912,38 +5364,52 @@ function ReviewMatrixPage({
         </main>
       </div>
 
-      {/* Field Inspection Popup */}
+      {/* Field Inspection Popup — view value + evidence; edit only when not submitted to customs */}
       {inspectingCell && (
         <div className="modal-overlay" onClick={() => setInspectingCell(null)}>
           <div className="inspection-modal" onClick={(e) => e.stopPropagation()}>
             <div className="inspection-header">
-              <h3 className="inspection-title">EDITING: {FIELD_LABELS[inspectingCell.field]}</h3>
-              <button className="inspection-close" onClick={() => setInspectingCell(null)}>
+              <h3 className="inspection-title">
+                {matrixReadOnly ? 'View' : 'Edit'}: {FIELD_LABELS[inspectingCell.field]}
+              </h3>
+              <button type="button" className="inspection-close" onClick={() => setInspectingCell(null)}>
                 ✕
               </button>
             </div>
             <div className="inspection-content">
-              <div className="inspection-field-row">
-                <input
-                  type="text"
-                  className="inspection-input"
-                  value={editingFieldValue}
-                  onChange={(e) => {
-                    setEditingFieldValue(e.target.value);
-                    matrixDirtyRef.current = true;
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleSaveFieldValue();
-                    }
-                  }}
-                  placeholder="Enter value..."
-                />
-                <button className="btn btn-sm btn-primary" onClick={handleSaveFieldValue}>
-                  Save
-                </button>
+              <div className="inspection-declarant-block">
+                <span className="inspection-declarant-label">Declarant value</span>
+                {matrixReadOnly ? (
+                  <div className="inspection-declarant-readonly">
+                    {currentCase.fields[inspectingCell.field]?.trim() || '—'}
+                  </div>
+                ) : (
+                  <div className="inspection-field-row">
+                    <input
+                      type="text"
+                      className="inspection-input"
+                      value={editingFieldValue}
+                      onChange={(e) => setEditingFieldValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleInspectionOk();
+                        }
+                      }}
+                      placeholder="Enter value..."
+                    />
+                    <button type="button" className="btn btn-sm btn-primary" onClick={handleInspectionOk}>
+                      OK
+                    </button>
+                  </div>
+                )}
               </div>
+              {inspectionLinkedEvidence?.crossColumn && (
+                <p className="inspection-cross-column-note">
+                  Evidence for this field is linked on another document column; the preview below shows that
+                  source file.
+                </p>
+              )}
               <div className={inspectionEvidenceStatusClass} role="status" aria-live="polite">
                 {inspectionEvidenceStatusLabel}
               </div>
@@ -5019,7 +5485,7 @@ function ReviewMatrixPage({
                   </div>
                 )}
               </div>
-              {inspectionHasValue && (
+              {!matrixReadOnly && inspectionHasValue && (
                 <div className="inspection-conflict-row">
                   <button
                     type="button"
@@ -5066,7 +5532,7 @@ function ReviewMatrixPage({
       )}
 
       {/* Return Modal */}
-      {showReturnModal && (
+      {showReturnModal && !matrixReadOnly && (
         <div className="modal-overlay" onClick={() => setShowReturnModal(false)}>
           <div className="return-modal" onClick={(e) => e.stopPropagation()}>
             <div className="return-modal-header">
