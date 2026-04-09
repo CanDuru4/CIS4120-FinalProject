@@ -29,18 +29,3 @@ coverage/
 
 # Vite
 .vite/
-
-# Legacy local-only apps (not tracked in remote)
-src/main.tsx
-src/main.caseflow.tsx
-src/main.neo.tsx
-src/App.tsx
-src/CaseFlowApp.tsx
-src/caseflow/
-src/neo/
-src/pages/
-src/dashboard/
-src/state/
-src/lib/
-src/styles/app.module.css
-src/styles/theme.css

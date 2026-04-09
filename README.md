@@ -1,55 +1,52 @@
-# HW5 - Implementation Prototypes (Port 5176)
+# Customs Case Manager — Port 5176 Prototype
 
-This repository tracks only the latest **port 5176** implementation prototype experience.
+React/TypeScript/Vite single-page app for **CIS 4120** (writer → reviewer → CEO workflow). This repo tracks the **port 5176** build only.
 
 ## Stack
 
-- Vite
-- React
-- TypeScript
+- Vite 8, React 19, TypeScript
+- PDF rendering via **pdfjs-dist** (writer document preview and matrix inspection)
 
-## Run
-Install the GitHub as a zip, open the folder and go to the folder from terminal via cd. Then:
+## Run locally
+
+From the project root:
+
 ```bash
 npm install
 npm run dev
 ```
 
-Open: [http://localhost:5176](http://localhost:5176)
+Open [http://localhost:5176](http://localhost:5176) (port is fixed via `--strictPort`).
 
-## App Entry
+Sample PDFs for demos live in [`sample_pdfs/`](sample_pdfs/).
 
-- [`index.html`](index.html) -> `src/main.5176.tsx`
-- Main app: [`src/port5176/Port5176App.tsx`](src/port5176/Port5176App.tsx)
+## App entry
+
+- [`index.html`](index.html) → [`src/main.5176.tsx`](src/main.5176.tsx)
+- Main UI: [`src/port5176/Port5176App.tsx`](src/port5176/Port5176App.tsx)
 - Styles: [`src/port5176/port5176.css`](src/port5176/port5176.css)
+- Seed data: [`src/port5176/seedData.ts`](src/port5176/seedData.ts)
 
-## Requirement Surfaces in 5176
+## What the app includes
 
-The app includes dedicated requirement surfaces for:
+1. **Auth** — Login / signup; roles: writer, lead reviewer, CEO.
+2. **Writer dashboard** — Kanban by case status; create cases; notifications bell with flyout (clear all, close control).
+3. **Case editor** — Declarant fields, multi-file upload, tabbed documents, PDF/image preview, drag-to-link evidence, comments, save draft / submit.
+4. **Draft & navigation** — Unsaved-change prompt on leave; baseline-based dirty detection; discarding a pristine new case removes it; submit validation (see below).
+5. **Send / submit validation** — “Send files” modal blocks empty cases (no files and no data) and cases with no uploads. With files: lists **yellow** (value present, not linked) and **red** (field empty) issues; **Send** requires an **explanation** when issues exist; explanation is stored as a case comment, then the case moves to review.
+6. **Review matrix** — Field × document grid for reviewers; inspection modal with evidence preview; CEO path to customs completion where applicable.
+7. **Persistence** — Case and session state stored in **localStorage**; a sync channel can reflect updates across tabs in the same browser.
 
-1. Hello world app  
-2. Hello styles  
-3. Role-based dashboards and case organization  
-4. Case creation and manual declarant entry  
-5. Multi-file upload and tab-based document viewing  
-6. Manual evidence linking between declarant fields and PDF regions  
-7. Send-file validation and controlled send with explanation flow  
-8. Review matrix (field x document)  
-9. Field inspection modal with linked PDF region preview  
-10. Real-time comments, notifications, and role-based routing
-
-## Notes
-
-- Case-level data is persisted in `localStorage` for the 5176 workflow.
-
-## Build
+## Build & preview
 
 ```bash
 npm run build
 npm run preview
 ```
 
-## AI Usage Attribution
+Other scripts: `npm run lint`, `npm run generate-sample-pdfs` (optional PDF tooling).
+
+## AI usage attribution
 
 - Portions of this repository were developed with AI coding assistance (including code generation, refactoring suggestions, bug-fix drafts, and documentation edits).
 - Team members reviewed, tested, and adjusted AI-assisted output before accepting changes.
