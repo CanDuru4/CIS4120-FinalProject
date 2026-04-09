@@ -18,7 +18,23 @@ type CaseStatus =
   | 'returned'
   | 'completed';
 
-type StatusTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
+/** Writer cannot edit after submit to lead, to CEO, or after customs completion. */
+function caseIsReadOnlyForWriterStatus(status: CaseStatus): boolean {
+  return status === 'ready_review' || status === 'ceo_review' || status === 'completed';
+}
+
+/** Review matrix: customs-completed for everyone; CEO queue read-only for lead (CEO may still act). */
+function caseIsReadOnlyForMatrixUser(status: CaseStatus, role: Role): boolean {
+  if (status === 'completed') return true;
+  return role === 'lead_reviewer' && status === 'ceo_review';
+}
+
+function isWriterEditorLocked(cases: Case[], caseId: string): boolean {
+  const c = cases.find(x => x.id === caseId);
+  return c != null && caseIsReadOnlyForWriterStatus(c.status);
+}
+
+type StatusTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'teal' | 'purple';
 
 type User = {
   email: string;
@@ -1435,6 +1451,20 @@ function nextDefaultCaseTitle(existing: Case[]): string {
   return `Case #${max + 1}`;
 }
 
+/** Latest meaningful activity on a case (creation or any comment) — for writer “Recent activity”. */
+function caseLastActivityTimeMs(c: Case): number {
+  let t = c.createdAt instanceof Date ? c.createdAt.getTime() : new Date(c.createdAt as unknown as string).getTime();
+  if (!Number.isFinite(t)) t = 0;
+  for (const com of c.comments) {
+    const ct =
+      com.timestamp instanceof Date
+        ? com.timestamp.getTime()
+        : new Date(com.timestamp as unknown as string).getTime();
+    if (Number.isFinite(ct) && ct > t) t = ct;
+  }
+  return t;
+}
+
 function DashboardPage({
   user,
   cases,
@@ -1516,27 +1546,49 @@ function DashboardPage({
       case 'missing_ev': return { label: 'Missing ev', tone: 'warning' };
       case 'ready_review':
         return user.role === 'writer'
-          ? { label: 'Submitted', tone: 'info' }
-          : { label: 'Head reviewer', tone: 'info' };
-      case 'ceo_review': return { label: 'Pending CEO', tone: 'info' };
+          ? { label: 'Submitted for review', tone: 'info' }
+          : { label: 'Head reviewer', tone: 'teal' };
+      case 'ceo_review': return { label: 'Pending CEO', tone: 'purple' };
       case 'returned': return { label: 'Returned', tone: 'danger' };
-      case 'completed': return { label: 'Completed', tone: 'success' };
+      case 'completed':
+        return user.role === 'writer'
+          ? { label: 'Submitted to customs', tone: 'success' }
+          : { label: 'Completed', tone: 'success' };
       default: return { label: 'New', tone: 'success' };
     }
   };
 
-  // Generate mock recent activity from cases
-  const recentActivity = cases.slice(0, 5).map(c => ({
-    id: c.id,
-    title: c.title,
-    status: c.status,
-    createdBy: c.createdBy,
-    timestamp: c.createdAt,
-  }));
+  const recentActivity = useMemo(() => {
+    const notifLatest = new Map<string, number>();
+    for (const n of notifications) {
+      if (!notificationVisibleToUser(n, user)) continue;
+      const ts =
+        n.timestamp instanceof Date
+          ? n.timestamp.getTime()
+          : new Date(n.timestamp as unknown as string).getTime();
+      if (!Number.isFinite(ts)) continue;
+      const prev = notifLatest.get(n.caseId) ?? 0;
+      if (ts > prev) notifLatest.set(n.caseId, ts);
+    }
+    return [...cases]
+      .map(c => {
+        const t = Math.max(caseLastActivityTimeMs(c), notifLatest.get(c.id) ?? 0);
+        return {
+          id: c.id,
+          title: c.title,
+          status: c.status,
+          createdBy: c.createdBy,
+          timestamp: new Date(t),
+        };
+      })
+      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+      .slice(0, 5);
+  }, [cases, notifications, user]);
 
   const formatTimestamp = (date: Date): string => {
     const now = new Date();
     const diff = now.getTime() - new Date(date).getTime();
+    if (diff < 0) return 'just now';
     const minutes = Math.floor(diff / 60000);
     if (minutes < 1) return 'just now';
     if (minutes < 60) return `${minutes}m ago`;
@@ -1628,7 +1680,7 @@ function DashboardPage({
                     <div className="user-menu-info">
                       <div className="user-menu-name">{user.name}</div>
                       <div className="user-menu-email">{user.email}</div>
-                      <div className="user-menu-role">{user.role.replace('_', ' ')}</div>
+                      <div className="user-menu-role">{user.role.replace(/_/g, ' ').toUpperCase()}</div>
                     </div>
                     <button
                       className="user-menu-item"
@@ -1660,7 +1712,14 @@ function DashboardPage({
                     </div>
                   </div>
                   <div className="writer-box-divider"></div>
-                  <div className="writer-cases-stack">
+                  <div
+                    className={
+                      'writer-cases-stack' +
+                      (writerCompletedExpanded && writerCompletedCases.length > 0
+                        ? ' writer-cases-stack--completed-expanded'
+                        : '')
+                    }
+                  >
                     <div className="writer-cases-list">
                       {writerActiveCases.length === 0 ? (
                         <div className="writer-empty-state">
@@ -2252,7 +2311,7 @@ function DashboardPage({
                   <div className="user-menu-info">
                     <div className="user-menu-name">{user.name}</div>
                     <div className="user-menu-email">{user.email}</div>
-                    <div className="user-menu-role">{user.role.replace('_', ' ')}</div>
+                    <div className="user-menu-role">{user.role.replace(/_/g, ' ').toUpperCase()}</div>
                   </div>
                   <button
                     className="user-menu-item"
@@ -2476,6 +2535,7 @@ function CaseEditorPage({
   const isEditorDirty = useCallback((): boolean => {
     const baseline = editorBaselineRef.current;
     if (!baseline || !currentCase) return false;
+    if (caseIsReadOnlyForWriterStatus(currentCase.status)) return false;
     return caseEditorDraftDirtyFingerprint(currentCase) !== caseEditorDraftDirtyFingerprint(baseline);
   }, [currentCase]);
 
@@ -2498,6 +2558,7 @@ function CaseEditorPage({
   }, [caseId, setCases]);
 
   const handleSaveDraft = useCallback(() => {
+    if (isWriterEditorLocked(cases, caseId)) return;
     setCases(prev => {
       const next = prev.map(c => {
         if (c.id !== caseId) return c;
@@ -2510,7 +2571,7 @@ function CaseEditorPage({
       return next;
     });
     setShowEditorUnsavedHint(false);
-  }, [caseId, setCases]);
+  }, [caseId, setCases, cases]);
 
   const requestEditorBack = useCallback(() => {
     if (skipUnsavedLeaveStored()) {
@@ -2593,7 +2654,7 @@ function CaseEditorPage({
     };
   }, []);
 
-  /** Link SVG reads refs during render; refs are set after commit. Re-render once layout/refs/PDF are ready. */
+  /** Link SVG reads refs during render; DOM may lag one frame after state (e.g. toolbar toggles). Include UI that shifts the doc pane + bump tick in useLayoutEffect below. */
   const linkOverlayDepsKey =
     currentCase == null
       ? `nocase:${caseId}`
@@ -2601,6 +2662,8 @@ function CaseEditorPage({
           caseId,
           activeDocId ?? '',
           editingField ?? '',
+          markEvidenceMode ? 'mem1' : 'mem0',
+          selectedRegion ?? '',
           pdfLayout
             ? `${pdfLayout.scale}:${pdfLayout.cw}:${pdfLayout.ch}:${pdfLayout.pageW}:${pdfLayout.pageH}`
             : 'none',
@@ -2628,14 +2691,15 @@ function CaseEditorPage({
   }, [linkOverlayDepsKey, currentCase]);
 
   useLayoutEffect(() => {
-    const root = editorRef.current;
-    if (!root) return;
     const ro = new ResizeObserver(() => {
       setLinkOverlayTick(t => t + 1);
     });
-    ro.observe(root);
+    const root = editorRef.current;
+    const docEl = docViewerRef.current;
+    if (root) ro.observe(root);
+    if (docEl) ro.observe(docEl);
     return () => ro.disconnect();
-  }, [caseId]);
+  }, [caseId, activeDocId, currentCase?.docs.length ?? 0]);
 
   useEffect(() => {
     const el = docViewerRef.current;
@@ -2653,16 +2717,28 @@ function CaseEditorPage({
     return () => el.removeEventListener('scroll', onScroll);
   }, [caseId]);
 
-  // Generate curved bezier path between two points
+  // Curved path with a straight final segment so markerEnd tangent aims at `end` (circle center).
   const generatePath = useCallback((start: { x: number; y: number }, end: { x: number; y: number }): string => {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1) {
+      return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+    }
+    const ux = dx / dist;
+    const uy = dy / dist;
+    const straightLen = Math.min(56, dist * 0.88, Math.max(12, dist * 0.2));
+    const joinX = end.x - ux * straightLen;
+    const joinY = end.y - uy * straightLen;
     const midX = (start.x + end.x) / 2;
     const controlOffset = Math.min(80, Math.abs(end.x - start.x) / 3);
-    return `M ${start.x} ${start.y} C ${start.x + controlOffset} ${start.y}, ${midX} ${(start.y + end.y) / 2}, ${end.x} ${end.y}`;
+    return `M ${start.x} ${start.y} C ${start.x + controlOffset} ${start.y}, ${midX} ${(start.y + end.y) / 2}, ${joinX} ${joinY} L ${end.x} ${end.y}`;
   }, []);
 
   // Start field drag
   const startFieldDrag = useCallback((field: DeclarantField, event: React.MouseEvent) => {
     if (event.button !== 0) return;
+    if (isWriterEditorLocked(cases, caseId)) return;
     event.preventDefault();
     const editorEl = editorRef.current;
     if (!editorEl) return;
@@ -2673,7 +2749,7 @@ function CaseEditorPage({
       x: event.clientX - editorRect.left,
       y: event.clientY - editorRect.top,
     });
-  }, []);
+  }, [cases, caseId]);
 
   // Update drag position
   const updateDrag = useCallback((event: React.MouseEvent | MouseEvent) => {
@@ -2691,6 +2767,11 @@ function CaseEditorPage({
   // Finish drag - check if over a region
   const finishDrag = useCallback((event: React.MouseEvent | MouseEvent) => {
     if (!draggingField || !currentCase) {
+      setDraggingField(null);
+      setDragPoint(null);
+      return;
+    }
+    if (isWriterEditorLocked(cases, caseId)) {
       setDraggingField(null);
       setDragPoint(null);
       return;
@@ -2743,10 +2824,11 @@ function CaseEditorPage({
 
     setDraggingField(null);
     setDragPoint(null);
-  }, [draggingField, currentCase, caseId, setCases]);
+  }, [draggingField, currentCase, caseId, setCases, cases]);
 
   // Add document region marker
   const addDocumentRegion = useCallback((docId: string, event: React.MouseEvent) => {
+    if (isWriterEditorLocked(cases, caseId)) return;
     const docViewerEl = docViewerRef.current;
     if (!docViewerEl) return;
 
@@ -2794,11 +2876,12 @@ function CaseEditorPage({
     }));
 
     setSelectedRegion(newRegion.id);
-  }, [caseId, setCases]);
+  }, [caseId, setCases, cases]);
 
   const beginRegionResize = useCallback(
     (region: DocumentRegion, handle: RegionResizeHandle, e: React.MouseEvent) => {
       if (e.button !== 0) return;
+      if (isWriterEditorLocked(cases, caseId)) return;
       e.stopPropagation();
       e.preventDefault();
       const L = pdfLayoutRef.current;
@@ -3006,12 +3089,13 @@ function CaseEditorPage({
       document.addEventListener('mousemove', onMoveLegacy);
       document.addEventListener('mouseup', onUpLegacy);
     },
-    [caseId, setCases],
+    [caseId, setCases, cases],
   );
 
   const beginRegionDrag = useCallback(
     (region: DocumentRegion, e: React.MouseEvent) => {
       if (e.button !== 0) return;
+      if (isWriterEditorLocked(cases, caseId)) return;
       const t = e.target as HTMLElement;
       if (t.closest('.region-marker-handle') || t.closest('.region-marker-trash')) return;
       e.stopPropagation();
@@ -3116,11 +3200,12 @@ function CaseEditorPage({
       document.addEventListener('mousemove', onMoveLegacy);
       document.addEventListener('mouseup', onUpLegacy);
     },
-    [caseId, setCases],
+    [caseId, setCases, cases],
   );
 
   const updateRegionDimensions = useCallback(
     (regionId: string, patch: { widthPct?: number; heightPct?: number }) => {
+      if (isWriterEditorLocked(cases, caseId)) return;
       const L = pdfLayoutRef.current;
       setCases(prev =>
         prev.map(c => {
@@ -3151,11 +3236,12 @@ function CaseEditorPage({
         }),
       );
     },
-    [caseId, setCases],
+    [caseId, setCases, cases],
   );
 
   // Remove the single evidence link for this field (if any).
   const removeLink = useCallback((field: DeclarantField) => {
+    if (isWriterEditorLocked(cases, caseId)) return;
     setCases(prev => prev.map(c => {
       if (c.id === caseId) {
         return {
@@ -3165,10 +3251,11 @@ function CaseEditorPage({
       }
       return c;
     }));
-  }, [caseId, setCases]);
+  }, [caseId, setCases, cases]);
 
   // Remove region
   const removeRegion = useCallback((regionId: string) => {
+    if (isWriterEditorLocked(cases, caseId)) return;
     setCases(prev => prev.map(c => {
       if (c.id === caseId) {
         return {
@@ -3180,7 +3267,7 @@ function CaseEditorPage({
       return c;
     }));
     setSelectedRegion(null);
-  }, [caseId, setCases]);
+  }, [caseId, setCases, cases]);
 
   // Mouse event handlers
   useEffect(() => {
@@ -3250,6 +3337,7 @@ function CaseEditorPage({
 
   const canSendSubmitFiles = useMemo(() => {
     if (!currentCase) return false;
+    if (caseIsReadOnlyForWriterStatus(currentCase.status)) return false;
     if (writerCaseCompletelyEmpty) return false;
     if (writerCaseHasNoFiles) return false;
     if (writerSubmitIssues.length === 0) return true;
@@ -3269,13 +3357,14 @@ function CaseEditorPage({
   }, []);
 
   const handleSubmitCase = () => {
+    if (!currentCase || caseIsReadOnlyForWriterStatus(currentCase.status)) return;
     setSubmitExplanationOpen(false);
     setSubmitExplanationText('');
     setShowSubmitModal(true);
   };
 
   const confirmSubmit = () => {
-    if (!currentCase || !canSendSubmitFiles) return;
+    if (!currentCase || caseIsReadOnlyForWriterStatus(currentCase.status) || !canSendSubmitFiles) return;
     const note = submitExplanationText.trim();
     setCases(prev =>
       prev.map(c => {
@@ -3348,6 +3437,7 @@ function CaseEditorPage({
 
   useEffect(() => {
     if (!currentCase || currentCase.id !== caseId) return;
+    if (caseIsReadOnlyForWriterStatus(currentCase.status)) return;
     setCases(prev => {
       const idx = prev.findIndex(x => x.id === caseId);
       if (idx < 0) return prev;
@@ -3364,6 +3454,17 @@ function CaseEditorPage({
       return out;
     });
   }, [editorStaleFingerprint, caseId, setCases, currentCase]);
+
+  useEffect(() => {
+    if (!currentCase) return;
+    if (!caseIsReadOnlyForWriterStatus(currentCase.status)) return;
+    setEditingField(null);
+    setEditValue('');
+    setMarkEvidenceMode(false);
+    setDraggingField(null);
+    setDragPoint(null);
+    setSelectedRegion(null);
+  }, [currentCase?.id, currentCase?.status]);
 
   if (!currentCase) {
     return (
@@ -3389,13 +3490,16 @@ function CaseEditorPage({
   const userInitials = user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   const myNotifications = notifications.filter(n => notificationVisibleToUser(n, user));
   const unreadBellCount = myNotifications.filter(n => !n.read).length;
+  const editorReadOnly = caseIsReadOnlyForWriterStatus(currentCase.status);
 
   const handleFieldEdit = (field: DeclarantField) => {
+    if (editorReadOnly) return;
     setEditingField(field);
     setEditValue(currentCase.fields[field]);
   };
 
   const handleFieldSave = (field: DeclarantField, value: string) => {
+    if (editorReadOnly) return;
     setCases(prev => prev.map(c => {
       if (c.id === caseId) {
         return {
@@ -3415,6 +3519,7 @@ function CaseEditorPage({
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (editorReadOnly) return;
     const files = event.target.files;
     if (!files) return;
 
@@ -3449,6 +3554,7 @@ function CaseEditorPage({
   };
 
   const handleAddComment = (text: string) => {
+    if (editorReadOnly) return;
     if (!text.trim()) return;
     const newComment = {
       author: user.name,
@@ -3521,7 +3627,7 @@ function CaseEditorPage({
                   <div className="user-menu-info">
                     <div className="user-menu-name">{user.name}</div>
                     <div className="user-menu-email">{user.email}</div>
-                    <div className="user-menu-role">{user.role.replace('_', ' ')}</div>
+                    <div className="user-menu-role">{user.role.replace(/_/g, ' ').toUpperCase()}</div>
                   </div>
                   <button
                     type="button"
@@ -3536,18 +3642,29 @@ function CaseEditorPage({
           </div>
         </header>
         <div className="header-divider"></div>
+        {editorReadOnly && (
+          <p className="editor-readonly-banner" role="status">
+            {currentCase.status === 'completed'
+              ? 'This case is completed — read-only. No edits, uploads, highlights, or comments.'
+              : currentCase.status === 'ceo_review'
+                ? 'Submitted to the CEO — read-only. No edits, uploads, highlights, or comments.'
+                : 'Submitted for lead review — read-only. No edits, uploads, highlights, or comments.'}
+          </p>
+        )}
 
         <main className="editor-main">
           <div className="editor-panels" ref={editorRef}>
             {/* SVG ARROW OVERLAY */}
-            <svg className="editor-svg-overlay">
+            <svg
+              className={`editor-svg-overlay${editorReadOnly ? ' editor-svg-overlay--readonly' : ''}`}
+            >
               <defs>
                 {/* Blue arrowhead — midpoint trash control uses its own red pill (link-label-bg). */}
                 <marker
                   id="arrowhead-blue"
                   markerWidth="10"
                   markerHeight="7"
-                  refX="9"
+                  refX="10"
                   refY="3.5"
                   orient="auto"
                 >
@@ -3558,7 +3675,7 @@ function CaseEditorPage({
                   id="arrowhead-conflict"
                   markerWidth="10"
                   markerHeight="7"
-                  refX="9"
+                  refX="10"
                   refY="3.5"
                   orient="auto"
                 >
@@ -3568,7 +3685,7 @@ function CaseEditorPage({
                   id="arrowhead-amber"
                   markerWidth="10"
                   markerHeight="7"
-                  refX="9"
+                  refX="10"
                   refY="3.5"
                   orient="auto"
                 >
@@ -3611,7 +3728,12 @@ function CaseEditorPage({
                       }
                     />
                     {/* Midpoint control: remove evidence link */}
-                    <g className="link-label-group" onClick={() => removeLink(link.field)}>
+                    <g
+                      className="link-label-group"
+                      onClick={() => {
+                        if (!editorReadOnly) removeLink(link.field);
+                      }}
+                    >
                       <title>{`Remove evidence link (${FIELD_LABELS[link.field]})`}</title>
                       <g transform={`translate(${midX}, ${midY})`}>
                         <rect
@@ -3740,17 +3862,21 @@ function CaseEditorPage({
                             ) : null}
                           </div>
                           <span className="field-value">{currentCase.fields[field] || '—'}</span>
-                          <button className="btn-icon btn-edit" onClick={() => handleFieldEdit(field)} aria-label={`Edit ${FIELD_LABELS[field]}`}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
-                            </svg>
-                          </button>
-                          <div
-                            className={`drag-handle ${hasLink ? 'has-link' : ''} ${draggingField === field ? 'dragging' : ''}`}
-                            onMouseDown={(e) => startFieldDrag(field, e)}
-                          >
-                            <span className="drag-circle"></span>
-                          </div>
+                          {!editorReadOnly ? (
+                            <button className="btn-icon btn-edit" onClick={() => handleFieldEdit(field)} aria-label={`Edit ${FIELD_LABELS[field]}`}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+                              </svg>
+                            </button>
+                          ) : null}
+                          {!editorReadOnly ? (
+                            <div
+                              className={`drag-handle ${hasLink ? 'has-link' : ''} ${draggingField === field ? 'dragging' : ''}`}
+                              onMouseDown={(e) => startFieldDrag(field, e)}
+                            >
+                              <span className="drag-circle"></span>
+                            </div>
+                          ) : null}
                         </div>
                       )}
                       {idx < Object.keys(FIELD_LABELS).length - 1 && <div className="field-separator"></div>}
@@ -3761,7 +3887,7 @@ function CaseEditorPage({
             </div>
 
             {/* RIGHT PANEL - DOCUMENTS */}
-            <div className="editor-panel documents-panel">
+            <div className={`editor-panel documents-panel${editorReadOnly ? ' documents-panel--readonly' : ''}`}>
               <div className="panel-header">
                 <h2 className="panel-title">DOCUMENTS</h2>
               </div>
@@ -3778,8 +3904,13 @@ function CaseEditorPage({
                   </div>
                   <p className="upload-text">Drag & Drop files here or click below</p>
                   <label
-                    className="btn btn-primary upload-btn"
-                    title={`Up to ${MAX_DOCUMENTS_PER_CASE} files per case`}
+                    className={`btn btn-primary upload-btn${editorReadOnly ? ' upload-btn--disabled' : ''}`}
+                    title={
+                      editorReadOnly
+                        ? 'Read-only case'
+                        : `Up to ${MAX_DOCUMENTS_PER_CASE} files per case`
+                    }
+                    aria-disabled={editorReadOnly}
                   >
                     Upload Files
                     <input
@@ -3787,6 +3918,7 @@ function CaseEditorPage({
                       multiple
                       accept=".pdf,.png,.jpg,.jpeg"
                       onChange={handleFileUpload}
+                      disabled={editorReadOnly}
                       style={{ display: 'none' }}
                     />
                   </label>
@@ -3811,15 +3943,21 @@ function CaseEditorPage({
                         ))}
                       </div>
                       <label
-                        className="doc-tab-add"
-                        title={`Upload more files (max ${MAX_DOCUMENTS_PER_CASE} per case)`}
+                        className={`doc-tab-add${editorReadOnly ? ' doc-tab-add--disabled' : ''}`}
+                        title={
+                          editorReadOnly
+                            ? 'Read-only case'
+                            : `Upload more files (max ${MAX_DOCUMENTS_PER_CASE} per case)`
+                        }
                         aria-label="Upload more files"
+                        aria-disabled={editorReadOnly}
                       >
                         <input
                           type="file"
                           multiple
                           accept=".pdf,.png,.jpg,.jpeg"
                           onChange={handleFileUpload}
+                          disabled={editorReadOnly}
                           style={{ display: 'none' }}
                         />
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" aria-hidden>
@@ -3835,7 +3973,7 @@ function CaseEditorPage({
                       currentCase.regions.find(
                         r => r.id === selectedRegion && r.docId === activeDocId,
                       );
-                    if (!sel) return null;
+                    if (!sel || editorReadOnly) return null;
                     return (
                       <div className="region-toolbar" role="region" aria-label="Selected highlight controls">
                         <span className="region-toolbar-label">Highlight</span>
@@ -3873,8 +4011,9 @@ function CaseEditorPage({
                       <div className="doc-empty">
                         <p>{hasDocs ? 'Select a file tab above.' : 'No files uploaded.'}</p>
                         <label
-                          className="btn btn-sm btn-primary"
-                          title={`Up to ${MAX_DOCUMENTS_PER_CASE} files per case`}
+                          className={`btn btn-sm btn-primary${editorReadOnly ? ' upload-btn--disabled' : ''}`}
+                          title={editorReadOnly ? 'Read-only case' : `Up to ${MAX_DOCUMENTS_PER_CASE} files per case`}
+                          aria-disabled={editorReadOnly}
                         >
                           Upload
                           <input
@@ -3882,19 +4021,21 @@ function CaseEditorPage({
                             multiple
                             accept=".pdf,.png,.jpg,.jpeg"
                             onChange={handleFileUpload}
+                            disabled={editorReadOnly}
                             style={{ display: 'none' }}
                           />
                         </label>
                       </div>
                     ) : (
                       <div
-                        className={`doc-preview${markEvidenceMode ? ' mark-evidence-active' : ''}`}
+                        className={`doc-preview${markEvidenceMode ? ' mark-evidence-active' : ''}${editorReadOnly ? ' editor-readonly' : ''}`}
                         ref={docViewerRef}
                         onClick={(e) => {
                           const el = e.target as HTMLElement;
                           if (el.closest('.doc-preview-mark-toggle')) return;
                           if (el.closest('.doc-hint-dismiss')) return;
                           if (
+                            editorReadOnly ||
                             !markEvidenceMode ||
                             !activeDocId ||
                             currentDocs.length === 0 ||
@@ -3914,8 +4055,10 @@ function CaseEditorPage({
                           <button
                             type="button"
                             className="doc-preview-mark-toggle"
+                            disabled={editorReadOnly}
                             onClick={e => {
                               e.stopPropagation();
+                              if (editorReadOnly) return;
                               if (editingField) {
                                 handleFieldCancel();
                                 return;
@@ -4033,7 +4176,10 @@ function CaseEditorPage({
                             )}
                           </div>
                         ) : (
-                          <>
+                          <div
+                            className={`doc-image-wrap${editorReadOnly ? ' editor-readonly' : ''}`}
+                            style={{ position: 'relative' }}
+                          >
                             <img src={currentDocs[0].dataUrl} alt={currentDocs[0].name} className="doc-image" />
                             <div
                               className="doc-region-layer"
@@ -4115,13 +4261,14 @@ function CaseEditorPage({
                                   );
                                 })}
                             </div>
-                          </>
+                          </div>
                         )}
 
                         {currentDocs.length > 0 &&
                           activeDocId &&
                           currentCase.regions.filter(r => r.docId === activeDocId).length === 0 &&
-                          !docEmptyHintDismissed && (
+                          !docEmptyHintDismissed &&
+                          !editorReadOnly && (
                           <div className="doc-hint">
                             <button
                               type="button"
@@ -4172,12 +4319,21 @@ function CaseEditorPage({
                   <input
                     type="text"
                     className="comment-input"
-                    placeholder="Add a comment..."
+                    placeholder={
+                      editorReadOnly ? 'Comments are closed (read-only case)' : 'Add a comment...'
+                    }
                     value={newCommentText}
                     onChange={(e) => setNewCommentText(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleAddComment(newCommentText)}
+                    disabled={editorReadOnly}
+                    readOnly={editorReadOnly}
                   />
-                  <button className="btn-send" onClick={() => handleAddComment(newCommentText)} aria-label="Send comment">
+                  <button
+                    className="btn-send"
+                    onClick={() => handleAddComment(newCommentText)}
+                    aria-label="Send comment"
+                    disabled={editorReadOnly}
+                  >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <line x1="22" y1="2" x2="11" y2="13"></line>
                       <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
@@ -4188,10 +4344,21 @@ function CaseEditorPage({
 
               {/* Submit Button */}
               <div className="submit-area">
-                <button type="button" className="btn btn-outline btn-save-draft" onClick={handleSaveDraft}>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-save-draft"
+                  onClick={handleSaveDraft}
+                  disabled={editorReadOnly}
+                >
                   Save draft
                 </button>
-                <button type="button" className="btn btn-success btn-submit" onClick={handleSubmitCase} aria-label="Submit case for review">
+                <button
+                  type="button"
+                  className="btn btn-success btn-submit"
+                  onClick={handleSubmitCase}
+                  aria-label="Submit case for review"
+                  disabled={editorReadOnly}
+                >
                   Submit Case
                 </button>
               </div>
@@ -4505,7 +4672,7 @@ function ReviewMatrixPage({
 
   const handleMatrixSaveDraft = useCallback(() => {
     const c0 = cases.find(x => x.id === caseId);
-    if (!c0 || c0.status === 'completed') return;
+    if (!c0 || caseIsReadOnlyForMatrixUser(c0.status, user.role)) return;
     const flush: Partial<Record<DeclarantField, string>> = {
       ...matrixPendingFields,
       ...(inspectingCell ? { [inspectingCell.field]: editingFieldValue } : {}),
@@ -4532,10 +4699,11 @@ function ReviewMatrixPage({
     if (merged) setMatrixSavedSnapshot(cloneCaseDeep(merged));
     setMatrixPendingFields({});
     setInspectingCell(null);
-  }, [caseId, cases, matrixPendingFields, inspectingCell, editingFieldValue, setCases, setInspectingCell]);
+  }, [caseId, cases, matrixPendingFields, inspectingCell, editingFieldValue, setCases, setInspectingCell, user.role]);
 
   const requestOpenReturnModal = useCallback(() => {
-    if (cases.find(c => c.id === caseId)?.status === 'completed') return;
+    const c = cases.find(x => x.id === caseId);
+    if (!c || caseIsReadOnlyForMatrixUser(c.status, user.role)) return;
     if (skipUnsavedLeaveStored() || !matrixDirtyRef.current) {
       setShowReturnModal(true);
       return;
@@ -4543,7 +4711,7 @@ function ReviewMatrixPage({
     setDontShowMatrixUnsavedAgain(false);
     matrixPendingLeaveRef.current = 'return';
     setMatrixUnsavedOpen(true);
-  }, [setShowReturnModal, cases, caseId]);
+  }, [setShowReturnModal, cases, caseId, user.role]);
 
   const requestMatrixBackNav = useCallback(() => {
     if (skipUnsavedLeaveStored() || !matrixDirtyRef.current) {
@@ -4713,13 +4881,13 @@ function ReviewMatrixPage({
   /** Match case editor: omit `status` so auto missing_ev ↔ drafting (matrix + writer rules) does not look “unsaved”. */
   const showMatrixUnsavedHint = useMemo(() => {
     const c = cases.find(x => x.id === caseId);
-    if (!c || c.status === 'completed') return false;
+    if (!c || caseIsReadOnlyForMatrixUser(c.status, user.role)) return false;
     if (!matrixSavedSnapshot) return false;
     const w = mergePendingMatrixFields(c, matrixPendingFields);
     return (
       caseEditorDraftDirtyFingerprint(w) !== caseEditorDraftDirtyFingerprint(matrixSavedSnapshot)
     );
-  }, [cases, caseId, matrixPendingFields, matrixSavedSnapshot]);
+  }, [cases, caseId, matrixPendingFields, matrixSavedSnapshot, user.role]);
 
   useEffect(() => {
     matrixDirtyRef.current = showMatrixUnsavedHint;
@@ -4746,7 +4914,10 @@ function ReviewMatrixPage({
     );
   }
 
-  const matrixReadOnly = currentCase.status === 'completed';
+  const matrixReadOnlyCustomsCompleted = currentCase.status === 'completed';
+  const matrixReadOnlyLeadCeoQueue =
+    user.role === 'lead_reviewer' && currentCase.status === 'ceo_review';
+  const matrixReadOnly = matrixReadOnlyCustomsCompleted || matrixReadOnlyLeadCeoQueue;
 
   const userInitials = user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   const myMatrixNotifications = notifications.filter(n => notificationVisibleToUser(n, user));
@@ -5026,7 +5197,7 @@ function ReviewMatrixPage({
                   <div className="user-menu-info">
                     <div className="user-menu-name">{user.name}</div>
                     <div className="user-menu-email">{user.email}</div>
-                    <div className="user-menu-role">{user.role.replace('_', ' ')}</div>
+                    <div className="user-menu-role">{user.role.replace(/_/g, ' ').toUpperCase()}</div>
                   </div>
                   <button
                     type="button"
@@ -5043,7 +5214,9 @@ function ReviewMatrixPage({
         <div className="header-divider"></div>
         {matrixReadOnly && (
           <p className="matrix-readonly-banner" role="status">
-            Submitted to customs — this case is read-only. No edits, uploads, or comments can be added.
+            {matrixReadOnlyCustomsCompleted
+              ? 'Submitted to customs — this case is read-only. No edits, uploads, or comments can be added.'
+              : 'With the CEO for approval — read-only for lead reviewers. View only; no edits, uploads, comments, return, or submit.'}
           </p>
         )}
 
@@ -5292,7 +5465,13 @@ function ReviewMatrixPage({
                     <input
                       type="text"
                       className="comment-input"
-                      placeholder={matrixReadOnly ? 'Comments are closed (submitted to customs)' : 'Add a comment...'}
+                      placeholder={
+                        matrixReadOnly
+                          ? matrixReadOnlyCustomsCompleted
+                            ? 'Comments are closed (submitted to customs)'
+                            : 'Comments are closed (with CEO — read-only)'
+                          : 'Add a comment...'
+                      }
                       value={newCommentText}
                       disabled={matrixReadOnly}
                       readOnly={matrixReadOnly}
@@ -5526,10 +5705,23 @@ function ReviewMatrixPage({
         <div className="modal-overlay" onClick={() => setShowReturnModal(false)}>
           <div className="return-modal" onClick={(e) => e.stopPropagation()}>
             <div className="return-modal-header">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2">
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                <line x1="12" y1="9" x2="12" y2="13"></line>
-                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              <svg
+                className="return-modal-warning-icon"
+                width="28"
+                height="28"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden={true}
+              >
+                <path
+                  d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
+                  fill="#fef3c7"
+                  stroke="#b45309"
+                  strokeWidth="2"
+                  strokeLinejoin="round"
+                />
+                <line x1="12" y1="9" x2="12" y2="13" stroke="#92400e" strokeWidth="2" strokeLinecap="round" />
+                <line x1="12" y1="17" x2="12.01" y2="17" stroke="#92400e" strokeWidth="2" strokeLinecap="round" />
               </svg>
               <h3 className="return-modal-title">RETURN THE FILES</h3>
             </div>
