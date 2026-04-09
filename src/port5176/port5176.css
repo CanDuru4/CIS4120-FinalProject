@@ -2504,17 +2504,19 @@ select:focus-visible {
 }
 
 .drag-circle {
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--color-border-strong);
+  width: 16px;
+  height: 16px;
+  border: 2.5px solid #64748b;
   border-radius: 50%;
   transition: all 0.15s ease;
-  background: var(--color-surface);
+  background: rgba(100, 116, 139, 0.12);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6) inset;
 }
 
 .drag-circle:hover {
   border-color: var(--color-primary);
-  transform: scale(1.1);
+  background: var(--color-primary-soft);
+  transform: scale(1.08);
 }
 
 /* ============== DOCUMENT REGION MARKERS ============== */
@@ -2661,27 +2663,39 @@ select:focus-visible {
   flex-shrink: 0;
   position: relative;
   z-index: 1;
-  background: rgba(148, 163, 184, 0.08);
-  border: 2px solid rgba(148, 163, 184, 0.65);
+  /* Unlinked / idle: must read on white PDFs at any region size */
+  background: rgba(71, 85, 105, 0.14);
+  border: 3px solid rgba(71, 85, 105, 0.62);
   border-radius: 50%;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.55),
+    0 0 0 1px rgba(15, 23, 42, 0.1);
 }
 
 .region-marker:hover .region-marker-inner {
-  border-color: rgba(37, 99, 235, 0.75);
-  box-shadow: 0 0 0 4px var(--color-primary-soft);
+  border-color: rgba(37, 99, 235, 0.9);
+  background: rgba(37, 99, 235, 0.08);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.6),
+    0 0 0 4px var(--color-primary-soft);
 }
 
 .region-marker.selected .region-marker-inner {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 4px var(--color-primary-ring);
+  border-width: 3px;
+  background: rgba(37, 99, 235, 0.1);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.5),
+    0 0 0 4px var(--color-primary-ring);
 }
 
-.region-marker.linked .region-marker-inner {
-  border-color: rgba(34, 197, 94, 0.95);
-  border-width: 2px;
+.region-marker.linked .region-marker-inner,
+.inspection-region-marker.linked .region-marker-inner {
+  border-color: rgba(22, 163, 74, 0.98);
+  border-width: 3px;
   background: var(--color-success-soft);
-  box-shadow: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
 }
 
 .region-marker-label {
