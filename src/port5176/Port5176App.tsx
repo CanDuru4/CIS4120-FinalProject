@@ -1370,11 +1370,11 @@ interface DashboardPageProps {
 }
 
 const STATUS_LANES: { status: CaseStatus; label: string; color: string }[] = [
-  { status: 'drafting', label: 'DRAFTING', color: '#1e2d40' },
-  { status: 'missing_ev', label: 'MISSING EV.', color: '#f59e0b' },
-  { status: 'ready_review', label: 'HEAD REVIEWER', color: '#2f6fd4' },
-  { status: 'returned', label: 'RETURNED (FIX)', color: '#ef4444' },
-  { status: 'completed', label: 'COMPLETED', color: '#22c55e' },
+  { status: 'drafting', label: 'Drafting', color: '#1e2d40' },
+  { status: 'missing_ev', label: 'Missing Evidence', color: '#f59e0b' },
+  { status: 'ready_review', label: 'Head Reviewer', color: '#2563eb' },
+  { status: 'returned', label: 'Returned (Fix)', color: '#ef4444' },
+  { status: 'completed', label: 'Completed', color: '#22c55e' },
 ];
 
 /** Main kanban lanes (excludes ceo_review — those cards appear in the COMPLETED column) */
@@ -1394,7 +1394,7 @@ const KANBAN_MULTI_FILTER_OPTIONS: { value: CaseStatus; label: string }[] = [
     const lane = STATUS_LANES.find(l => l.status === s)!;
     return { value: s, label: lane.label };
   }),
-  { value: 'completed', label: 'COMPLETED' },
+  { value: 'completed', label: 'Completed' },
 ];
 
 const KANBAN_EMPTY_LABEL: Record<CaseStatus, string> = {
@@ -1749,25 +1749,10 @@ function DashboardPage({
                 {/* Box 2: File Upload */}
                 <div className="writer-box">
                   <div className="writer-box-header">
-                    <span className="writer-box-label">File Upload</span>
+                    <span className="writer-box-label">Upload</span>
                   </div>
                   <div className="writer-box-divider"></div>
                   <div className="writer-file-upload-content">
-                    <div className="writer-file-thumbnails">
-                      <div className="writer-file-thumb">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2">
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                          <polyline points="14 2 14 8 20 8"></polyline>
-                        </svg>
-                        <span>Invoice...</span>
-                      </div>
-                      <div className="writer-file-thumb">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2">
-                          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                        </svg>
-                        <span>Folder</span>
-                      </div>
-                    </div>
                     <div className="writer-drop-zone" onClick={createCase}>
                       <div className="writer-drop-zone-icon">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1781,6 +1766,9 @@ function DashboardPage({
                         Create Case
                       </button>
                     </div>
+                    <p className="writer-upload-hint" aria-hidden="true">
+                      Common uploads: Invoice • Packing list • Insurance • ATR
+                    </p>
                   </div>
                 </div>
               </div>
@@ -1938,7 +1926,9 @@ function DashboardPage({
         <div className="kanban-card-author">by {c.createdBy}</div>
         <div className="kanban-card-bullets">
           <div className="kanban-bullet">
-            <span className="kanban-bullet-dot" style={{ backgroundColor: filledFields === 9 ? '#2f6fd4' : '#64748b' }}></span>
+            <span
+              className={`kanban-bullet-dot ${filledFields === 9 ? 'kanban-bullet-dot--fields-complete' : 'kanban-bullet-dot--fields-partial'}`}
+            ></span>
             <span>Fields {filledFields}/9</span>
           </div>
           {conflicts > 0 && (
@@ -2039,7 +2029,9 @@ function DashboardPage({
     if (!isCeo) {
       return (
         <div className="kanban-column">
-          <div className="kanban-col-header kanban-col-completed">COMPLETED</div>
+          <div className="kanban-col-header kanban-col-completed">
+            {STATUS_LANES.find(l => l.status === 'completed')!.label}
+          </div>
           <div className="kanban-column-scroll">
             {laneCases.map(c => renderKanbanCard(c))}
             {laneCases.length === 0 && (
@@ -2054,7 +2046,9 @@ function DashboardPage({
 
     return (
       <div className="kanban-column">
-        <div className="kanban-col-header kanban-col-completed">COMPLETED</div>
+        <div className="kanban-col-header kanban-col-completed">
+          {STATUS_LANES.find(l => l.status === 'completed')!.label}
+        </div>
         {pendingCeo.length === 0 && customsCompleted.length === 0 ? (
           <div className="kanban-empty-col">No completed cases</div>
         ) : (
@@ -2078,13 +2072,13 @@ function DashboardPage({
                           </span>
                         </div>
                         <div className="kanban-card-author">by {c.createdBy}</div>
-                        <div className="kanban-card-bullets">
+                          <div className="kanban-card-bullets">
                           <div className="kanban-bullet">
-                            <span className="kanban-bullet-dot" style={{ backgroundColor: '#f59e0b' }}></span>
+                            <span className="kanban-bullet-dot kanban-bullet-dot--status-warn"></span>
                             <span>Fields {filledFields}/10</span>
                           </div>
                           <div className="kanban-bullet kanban-bullet-green">
-                            <span className="kanban-bullet-dot" style={{ backgroundColor: '#22c55e' }}></span>
+                            <span className="kanban-bullet-dot kanban-bullet-dot--status-ok"></span>
                             <span>Everything correct</span>
                           </div>
                         </div>
@@ -2120,7 +2114,7 @@ function DashboardPage({
                             <span className="kanban-history-title">{c.title}</span>
                             <span className="kanban-history-meta">by {c.createdBy} • {dateStr}</span>
                           </div>
-                          <svg className="kanban-history-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3">
+                          <svg className="kanban-history-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
                             <polyline points="20 6 9 17 4 12"></polyline>
                           </svg>
                         </div>
@@ -3557,7 +3551,7 @@ function CaseEditorPage({
                   refY="3.5"
                   orient="auto"
                 >
-                  <polygon points="0 0, 10 3.5, 0 7" fill="#2f6fd4" />
+                  <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb" />
                 </marker>
                 {/* Amber arrowhead for dragging */}
                 <marker
