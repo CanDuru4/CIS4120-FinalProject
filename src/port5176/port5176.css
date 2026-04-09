@@ -3,27 +3,45 @@
 /* ============== CSS VARIABLES ============== */
 
 :root {
-  --color-bg: #d4b896;
-  --color-white: #ffffff;
-  --color-navy: #1e2d40;
-  --color-primary: #2f6fd4;
-  --color-success: #22c55e;
-  --color-danger: #ef4444;
-  --color-warning: #f59e0b;
-  --color-text: #1e2d40;
+  /* Neutral + blue direction (A), with subtle status colors */
+  --color-bg: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f1f5f9;
+  --color-text: #0f172a;
   --color-text-muted: #64748b;
   --color-border: #e2e8f0;
+  --color-border-strong: #cbd5e1;
 
-  --font-heading: 'Sora', sans-serif;
+  /* Primary interaction accent */
+  --color-primary: #2563eb;
+  --color-primary-700: #1d4ed8;
+  --color-primary-soft: rgba(37, 99, 235, 0.10);
+  --color-primary-ring: rgba(37, 99, 235, 0.22);
+
+  /* Semantic colors: reserved for meaning (links/matrix/status), not general UI chrome */
+  --color-success: #16a34a;
+  --color-success-soft: rgba(34, 197, 94, 0.12);
+  --color-danger: #dc2626;
+  --color-danger-soft: rgba(239, 68, 68, 0.12);
+  --color-danger-700: #b91c1c;
+  --color-warning: #d97706;
+  --color-warning-soft: rgba(245, 158, 11, 0.14);
+
+  --color-white: #ffffff;
+  --color-navy: #0f172a;
+
+  /* Typography */
   --font-body: 'DM Sans', sans-serif;
+  --font-heading: 'DM Sans', sans-serif;
+  --font-display: 'Sora', sans-serif;
 
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 20px;
 
-  --shadow-sm: 0 2px 8px rgba(30, 45, 64, 0.08);
-  --shadow-md: 0 4px 16px rgba(30, 45, 64, 0.12);
-  --shadow-lg: 0 8px 32px rgba(30, 45, 64, 0.16);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 1px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.10);
+  --shadow-lg: 0 18px 48px rgba(15, 23, 42, 0.14);
 }
 
 /* ============== RESET & BASE ============== */
@@ -38,7 +56,7 @@
 
 html,
 body {
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-body);
   font-size: 16px;
   line-height: 1.5;
   color: var(--color-text);
@@ -55,7 +73,8 @@ body {
 }
 
 h1, h2, h3, .header-title {
-  font-family: 'Sora', sans-serif;
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
 }
 
 button {
@@ -69,7 +88,7 @@ button:hover:not(:disabled) {
 button:focus-visible,
 input:focus-visible,
 select:focus-visible {
-  outline: 2px solid #2f6fd4;
+  outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 
@@ -88,7 +107,7 @@ select:focus-visible {
   padding: 0;
   align-items: stretch;
   align-self: stretch;
-  background-color: var(--color-white);
+  background-color: var(--color-surface);
   flex: 1;
   min-height: 0;
   width: 100%;
@@ -101,10 +120,10 @@ select:focus-visible {
 .auth-card {
   width: 100%;
   max-width: 420px;
-  background: var(--color-white);
-  border: 3px solid var(--color-navy);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
   border-radius: 16px;
-  box-shadow: 3px 3px 0 rgba(30, 45, 64, 0.12);
+  box-shadow: var(--shadow-md);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -130,9 +149,9 @@ select:focus-visible {
 .auth-title {
   font-family: var(--font-heading);
   font-size: 1.125rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-weight: 750;
+  text-transform: none;
+  letter-spacing: -0.01em;
   color: var(--color-navy);
   line-height: 1.25;
   margin: 0;
@@ -154,8 +173,8 @@ select:focus-visible {
 }
 
 .auth-error {
-  background: #fff5f5;
-  border: 2px solid var(--color-navy);
+  background: var(--color-danger-soft);
+  border: 1px solid rgba(220, 38, 38, 0.28);
   border-left: 4px solid var(--color-danger);
   color: var(--color-navy);
   padding: 12px 14px;
@@ -183,8 +202,8 @@ select:focus-visible {
   font-size: 0.875rem;
   font-weight: 600;
   color: var(--color-navy);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .form-group input,
@@ -195,8 +214,8 @@ select:focus-visible {
   font-family: var(--font-body);
   font-size: 1rem;
   color: var(--color-text);
-  background: var(--color-white);
-  border: 2px solid var(--color-navy);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
@@ -209,7 +228,7 @@ select:focus-visible {
 .form-group select:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(47, 111, 212, 0.15);
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
 }
 
 .form-group select {
@@ -234,7 +253,7 @@ select:focus-visible {
 
 .form-group-password .password-input-row:focus-within {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(47, 111, 212, 0.15);
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
 }
 
 /* Inner shell clips native shadow-DOM affordances to the input box */
@@ -303,7 +322,7 @@ select:focus-visible {
 
 .btn-toggle-password:hover {
   color: var(--color-primary);
-  background: rgba(47, 111, 212, 0.06);
+  background: var(--color-primary-soft);
 }
 
 .btn-toggle-password:focus-visible {
@@ -321,9 +340,9 @@ select:focus-visible {
   padding: 0 24px;
   font-family: var(--font-heading);
   font-size: 1rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  font-weight: 650;
+  text-transform: none;
+  letter-spacing: 0;
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -341,18 +360,18 @@ select:focus-visible {
 .btn-primary {
   background: var(--color-primary);
   color: var(--color-white);
-  box-shadow: 0 4px 12px rgba(47, 111, 212, 0.3);
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.22);
 }
 
 .btn-primary:hover {
-  background: #2860b8;
-  box-shadow: 0 6px 16px rgba(47, 111, 212, 0.4);
+  background: var(--color-primary-700);
+  box-shadow: 0 12px 26px rgba(37, 99, 235, 0.26);
 }
 
 .btn-success {
   background: var(--color-success);
   color: var(--color-white);
-  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
+  box-shadow: 0 10px 22px rgba(22, 163, 74, 0.20);
 }
 
 .btn-success:hover {
@@ -363,7 +382,7 @@ select:focus-visible {
 .btn-danger {
   background: var(--color-danger);
   color: var(--color-white);
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+  box-shadow: 0 10px 22px rgba(220, 38, 38, 0.18);
 }
 
 .btn-danger:hover {
@@ -412,8 +431,8 @@ select:focus-visible {
 .auth-switch .link-btn {
   font-family: var(--font-heading);
   font-size: 0.875rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: none;
+  letter-spacing: 0;
   text-decoration: none;
   border-bottom: 2px solid transparent;
 }
@@ -433,7 +452,7 @@ select:focus-visible {
 }
 
 .dashboard-card {
-  background: var(--color-white);
+  background: var(--color-surface);
   border: none;
   border-radius: 0;
   box-shadow: none;
@@ -466,9 +485,9 @@ select:focus-visible {
 .dashboard-title {
   font-family: var(--font-heading);
   font-size: 1.25rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-weight: 750;
+  text-transform: none;
+  letter-spacing: -0.01em;
   color: var(--color-navy);
   margin: 0;
 }
@@ -479,8 +498,8 @@ select:focus-visible {
   padding: 5px 14px;
   font-size: 0.6875rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-transform: none;
   color: #713f12;
   background: #fef9c3;
   border: 1px solid #eab308;
@@ -516,26 +535,26 @@ select:focus-visible {
   height: 44px;
   padding: 0 18px;
   font-family: var(--font-heading);
-  font-weight: 800;
+  font-weight: 700;
   font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--color-navy);
-  background: var(--color-white);
-  border: 2px solid var(--color-navy);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
 .btn-kanban-filter:hover {
-  background: #f8fafc;
+  background: var(--color-surface-muted);
 }
 
 .btn-kanban-filter:focus-visible {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(47, 111, 212, 0.15);
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
 }
 
 .kanban-filter-dropdown {
@@ -546,10 +565,10 @@ select:focus-visible {
   min-width: 240px;
   max-width: min(320px, 90vw);
   padding: 6px;
-  background: var(--color-white);
-  border: 2px solid var(--color-navy);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
-  box-shadow: 4px 4px 0 rgba(30, 45, 64, 0.12);
+  box-shadow: var(--shadow-md);
 }
 
 .kanban-filter-option {
@@ -575,7 +594,7 @@ select:focus-visible {
 
 .kanban-filter-option--active {
   font-weight: 700;
-  background: rgba(47, 111, 212, 0.1);
+  background: var(--color-primary-soft);
   color: var(--color-navy);
 }
 
@@ -654,33 +673,33 @@ select:focus-visible {
 
 .kanban-col-header {
   padding: 10px 14px;
-  border: 2.5px solid var(--color-navy);
+  border: 1px solid var(--color-border-strong);
   border-radius: 10px;
-  background: #fff;
+  background: var(--color-surface);
   font-family: var(--font-heading);
-  font-weight: 800;
+  font-weight: 750;
   font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  text-transform: none;
+  letter-spacing: 0;
   text-align: center;
   color: var(--color-navy);
   line-height: 1.3;
 }
 
-.kanban-col-drafting  { border-color: #1e2d40; }
+.kanban-col-drafting  { border-color: var(--color-navy); }
 .kanban-col-missing   { border-color: #f59e0b; color: #92400e; }
-.kanban-col-review    { border-color: #2f6fd4; color: #1e40af; }
+.kanban-col-review    { border-color: var(--color-primary); color: #1e40af; }
 .kanban-col-returned  { border-color: #ef4444; color: #991b1b; }
 .kanban-col-completed { border-color: #22c55e; color: #166534; }
 
 .kanban-card {
-  background: #fff;
-  border: 2px solid var(--color-navy);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
   border-radius: 10px;
   padding: 12px 14px;
   cursor: pointer;
-  box-shadow: 2px 2px 0 rgba(30,45,64,0.1);
-  transition: all 0.15s ease;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
   text-align: left;
   width: 100%;
   font-family: var(--font-body);
@@ -689,7 +708,7 @@ select:focus-visible {
 .kanban-card:hover {
   border-color: var(--color-primary);
   transform: translateY(-2px);
-  box-shadow: 3px 3px 0 rgba(30,45,64,0.15);
+  box-shadow: var(--shadow-md);
 }
 
 .kanban-card--deletable {
@@ -1008,7 +1027,7 @@ select:focus-visible {
 }
 
 .notification-flyout-close:hover {
-  background: rgba(47, 111, 212, 0.1);
+  background: var(--color-primary-soft);
   color: var(--color-primary);
 }
 
@@ -1038,7 +1057,7 @@ select:focus-visible {
   top: calc(100% + 12px);
   right: 0;
   width: 300px;
-  background: var(--color-white);
+  background: var(--color-surface);
   border: 2px solid var(--color-danger);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
@@ -1074,7 +1093,7 @@ select:focus-visible {
   font-family: var(--font-heading);
   font-size: 0.75rem;
   font-weight: 700;
-  text-transform: uppercase;
+  text-transform: none;
   border-radius: 4px;
 }
 
@@ -1225,8 +1244,8 @@ select:focus-visible {
   font-size: 0.7rem;
   color: var(--color-primary);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: none;
+  letter-spacing: 0;
   margin-top: 4px;
 }
 
@@ -1264,7 +1283,7 @@ select:focus-visible {
   display: flex;
   align-items: center;
   padding: 12px 20px;
-  background: var(--color-white);
+  background: var(--color-surface);
   border: none;
   border-left: 4px solid var(--lane-color);
   border-radius: var(--radius-sm);
@@ -1272,8 +1291,8 @@ select:focus-visible {
   font-family: var(--font-heading);
   font-size: 0.8125rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--color-navy);
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
@@ -1323,8 +1342,8 @@ select:focus-visible {
 /* ============== CASE CARD ============== */
 
 .case-card {
-  background: var(--color-white);
-  border: 2px solid var(--color-navy);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   padding: 20px;
@@ -1384,7 +1403,7 @@ select:focus-visible {
   align-items: center;
   justify-content: center;
   background: transparent;
-  border: 2px solid var(--color-navy);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--color-navy);
@@ -1392,8 +1411,8 @@ select:focus-visible {
 }
 
 .btn-back:hover {
-  background: var(--color-navy);
-  color: var(--color-white);
+  background: var(--color-surface-muted);
+  color: var(--color-navy);
 }
 
 .editor-main {
@@ -1414,7 +1433,7 @@ select:focus-visible {
 }
 
 .editor-panel {
-  border: 2px solid var(--color-navy);
+  border: 1px solid var(--color-border-strong);
   border-radius: 16px;
   display: flex;
   flex-direction: column;
@@ -1430,15 +1449,15 @@ select:focus-visible {
   font-family: var(--font-heading);
   font-size: 1rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--color-navy);
 }
 
 .panel-divider {
   height: 1px;
-  background-color: var(--color-navy);
-  opacity: 0.3;
+  background-color: var(--color-border);
+  opacity: 1;
 }
 
 /* ============== DECLARANT PANEL ============== */
@@ -1495,11 +1514,11 @@ select:focus-visible {
   font-family: var(--font-heading);
   font-size: 0.6875rem;
   font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-transform: none;
   color: var(--color-primary);
-  background: rgba(47, 111, 212, 0.14);
-  border: 1px solid rgba(47, 111, 212, 0.4);
+  background: var(--color-primary-soft);
+  border: 1px solid rgba(37, 99, 235, 0.25);
   border-radius: 999px;
   padding: 4px 9px;
   line-height: 1;
@@ -1575,7 +1594,7 @@ select:focus-visible {
 
 .field-input:focus {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(47, 111, 212, 0.15);
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
 }
 
 .field-actions {
@@ -1714,7 +1733,7 @@ select:focus-visible {
 
 .doc-tab-add:hover {
   color: var(--color-primary);
-  background: rgba(47, 111, 212, 0.06);
+  background: var(--color-primary-soft);
 }
 
 .doc-tab-add:focus-within {
@@ -1767,8 +1786,8 @@ select:focus-visible {
 .region-toolbar-label {
   font-family: var(--font-heading);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--color-text-muted);
 }
 
@@ -1851,11 +1870,11 @@ select:focus-visible {
   font-family: var(--font-heading);
   font-size: 0.6875rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--color-navy);
-  background: var(--color-white);
-  border: 2px solid var(--color-navy);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
@@ -2054,8 +2073,8 @@ select:focus-visible {
 }
 
 .modal-card {
-  background: var(--color-white);
-  border: 3px solid var(--color-navy);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   padding: 32px 40px;
@@ -2307,21 +2326,24 @@ select:focus-visible {
 .link-line {
   fill: none;
   stroke: var(--color-primary);
-  stroke-width: 3;
+  stroke-width: 2.25;
   stroke-linecap: round;
+  opacity: 0.9;
 }
 
 .link-line-conflict {
   stroke: var(--color-danger);
+  opacity: 0.95;
 }
 
 .link-line-dragging {
   fill: none;
-  stroke: var(--color-warning);
-  stroke-width: 3;
+  stroke: var(--color-primary);
+  stroke-width: 2.25;
   stroke-linecap: round;
   stroke-dasharray: 8 4;
   animation: dash-move 0.5s linear infinite;
+  opacity: 0.95;
 }
 
 @keyframes dash-move {
@@ -2339,7 +2361,7 @@ select:focus-visible {
 }
 
 .link-label-group:hover .link-label-bg {
-  fill: #b91c1c;
+  fill: var(--color-danger-700);
 }
 
 .link-label-bg {
@@ -2366,9 +2388,9 @@ select:focus-visible {
 }
 
 .drag-handle.dragging .drag-circle {
-  border-color: var(--color-warning);
-  background: var(--color-warning);
-  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.3);
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  box-shadow: 0 0 0 4px var(--color-primary-ring);
 }
 
 .drag-handle.has-link .drag-circle {
@@ -2379,9 +2401,10 @@ select:focus-visible {
 .drag-circle {
   width: 14px;
   height: 14px;
-  border: 2px solid var(--color-text-muted);
+  border: 2px solid var(--color-border-strong);
   border-radius: 50%;
   transition: all 0.15s ease;
+  background: var(--color-surface);
 }
 
 .drag-circle:hover {
@@ -2531,25 +2554,27 @@ select:focus-visible {
   width: 100%;
   height: 100%;
   flex-shrink: 0;
-  background: transparent;
-  border: 3px solid var(--color-danger);
+  background: rgba(148, 163, 184, 0.08);
+  border: 2px solid rgba(148, 163, 184, 0.65);
   border-radius: 50%;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .region-marker:hover .region-marker-inner {
-  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.45);
+  border-color: rgba(37, 99, 235, 0.75);
+  box-shadow: 0 0 0 4px var(--color-primary-soft);
 }
 
 .region-marker.selected .region-marker-inner {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px rgba(47, 111, 212, 0.5);
+  box-shadow: 0 0 0 4px var(--color-primary-ring);
 }
 
 .region-marker.linked .region-marker-inner {
-  border-color: var(--color-primary);
-  border-width: 3px;
-  box-shadow: 0 0 0 1px rgba(47, 111, 212, 0.35);
+  border-color: rgba(34, 197, 94, 0.95);
+  border-width: 2px;
+  background: var(--color-success-soft);
+  box-shadow: none;
 }
 
 .region-marker-label {
@@ -2559,13 +2584,14 @@ select:focus-visible {
   transform: translateX(-50%);
   margin-top: 4px;
   padding: 2px 8px;
-  background: var(--color-primary);
-  color: var(--color-white);
+  background: var(--color-surface);
+  color: var(--color-primary);
   font-family: var(--font-heading);
   font-size: 9px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: none;
   border-radius: 4px;
+  border: 1px solid rgba(37, 99, 235, 0.25);
   white-space: nowrap;
 }
 
@@ -2578,13 +2604,13 @@ select:focus-visible {
   transform: translateX(-50%);
   max-width: calc(100% - 24px);
   padding: 8px 32px 8px 14px;
-  background: rgba(30, 45, 64, 0.88);
+  background: rgba(15, 23, 42, 0.84);
   color: var(--color-white);
   font-family: var(--font-heading);
   font-size: 10px;
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  text-transform: none;
+  letter-spacing: 0;
   line-height: 1.35;
   text-align: center;
   border-radius: 20px;
@@ -2682,7 +2708,7 @@ select:focus-visible {
 }
 
 .matrix-panel {
-  border: 2px solid var(--color-navy);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   padding: 16px 20px;
   overflow: hidden;
@@ -2726,8 +2752,8 @@ select:focus-visible {
   font-family: var(--font-heading);
   font-size: 0.9375rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--color-navy);
   text-align: center;
   border-bottom: 2px solid var(--color-navy);
@@ -2808,19 +2834,19 @@ select:focus-visible {
 }
 
 .matrix-cell-linked {
-  background: #dcfce7;
+  background: var(--color-success-soft);
 }
 
 .matrix-cell-conflict {
-  background: #fef2f2;
+  background: var(--color-danger-soft);
 }
 
 .matrix-cell-orange {
-  background: #ffedd5;
+  background: var(--color-warning-soft);
 }
 
 .matrix-cell-stale {
-  background: #fef9c3;
+  background: rgba(245, 158, 11, 0.18);
 }
 
 .matrix-icon {
@@ -2942,8 +2968,8 @@ label.btn-add-files {
 .matrix-files-preview {
   flex: 1 1 0;
   min-height: 140px;
-  background: var(--color-white);
-  border: 2px solid var(--color-navy);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
@@ -2966,8 +2992,8 @@ label.btn-add-files {
   font-family: var(--font-heading);
   font-size: 0.8125rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--color-navy);
 }
 
@@ -2976,7 +3002,7 @@ label.btn-add-files {
   font-size: 0.75rem;
   font-weight: 700;
   color: var(--color-primary);
-  background: rgba(47, 111, 212, 0.12);
+  background: var(--color-primary-soft);
   padding: 2px 8px;
   border-radius: 999px;
 }
@@ -3060,7 +3086,7 @@ label.btn-add-files {
 
 .matrix-doc-tab-add:hover {
   color: var(--color-primary);
-  background: rgba(47, 111, 212, 0.06);
+  background: var(--color-primary-soft);
 }
 
 .matrix-doc-tab-add:focus-within {
@@ -3181,8 +3207,8 @@ label.btn-add-files {
 /* ============== INSPECTION MODAL ============== */
 
 .inspection-modal {
-  background: var(--color-white);
-  border: 3px solid var(--color-navy);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   width: 92%;
@@ -3202,8 +3228,8 @@ label.btn-add-files {
   font-family: var(--font-heading);
   font-size: 1rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--color-navy);
 }
 
@@ -3263,8 +3289,8 @@ label.btn-add-files {
   font-family: var(--font-body);
   font-size: 0.9375rem;
   color: var(--color-text);
-  background: var(--color-white);
-  border: 2px solid var(--color-navy);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
 }
 
@@ -3283,8 +3309,8 @@ label.btn-add-files {
   font-family: var(--font-heading);
   font-size: 0.6875rem;
   font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--color-text-muted);
 }
 
@@ -3320,12 +3346,12 @@ label.btn-add-files {
   font-family: var(--font-heading);
   font-size: 0.75rem;
   font-weight: 800;
-  text-transform: uppercase;
+  text-transform: none;
   letter-spacing: 0.06em;
   text-align: center;
   border: 2px solid var(--color-navy);
   border-radius: var(--radius-sm);
-  background: var(--color-white);
+  background: var(--color-surface);
   color: var(--color-navy);
 }
 
@@ -3380,8 +3406,8 @@ label.btn-add-files {
   font-family: var(--font-heading);
   font-size: 0.6875rem;
   font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--color-text-muted);
 }
 
@@ -3461,8 +3487,8 @@ label.btn-add-files {
 /* ============== RETURN MODAL ============== */
 
 .return-modal {
-  background: var(--color-white);
-  border: 3px solid var(--color-navy);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   width: 90%;
@@ -3481,7 +3507,7 @@ label.btn-add-files {
   font-family: var(--font-heading);
   font-size: 1.125rem;
   font-weight: 700;
-  text-transform: uppercase;
+  text-transform: none;
   color: var(--color-navy);
 }
 
@@ -3492,8 +3518,8 @@ label.btn-add-files {
   font-family: var(--font-body);
   font-size: 0.9375rem;
   color: var(--color-text);
-  background: var(--color-white);
-  border: 2px solid var(--color-navy);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
   resize: vertical;
   margin-bottom: 20px;
@@ -3522,8 +3548,8 @@ label.btn-add-files {
   font-family: var(--font-heading);
   font-size: 1.25rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: none;
+  letter-spacing: -0.01em;
   color: var(--color-navy);
   margin-bottom: 8px;
 }
@@ -3595,7 +3621,7 @@ label.btn-add-files {
 .form-group select:focus-visible {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(47, 111, 212, 0.2);
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
 }
 
 /* ============== MODAL FADE-IN ANIMATION ============== */
@@ -3898,7 +3924,7 @@ label.btn-add-files {
 
 .upload-zone:hover {
   border-color: var(--color-primary);
-  background-color: rgba(47, 111, 212, 0.02);
+  background-color: rgba(37, 99, 235, 0.02);
 }
 
 /* ============== INSPECTOR CLOSE BUTTON ============== */
@@ -3941,8 +3967,8 @@ label.btn-add-files {
 
 /* Writer Box - Base Styles */
 .writer-box {
-  background: var(--color-white);
-  border: 3px solid var(--color-navy);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
   border-radius: 16px;
   display: flex;
   flex-direction: column;
@@ -3974,8 +4000,8 @@ label.btn-add-files {
   font-size: 1rem;
   font-weight: 700;
   color: var(--color-navy);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .writer-flagged-badge {
@@ -3991,8 +4017,8 @@ label.btn-add-files {
 
 .writer-box-divider {
   height: 1px;
-  background-color: var(--color-navy);
-  opacity: 0.2;
+  background-color: var(--color-border);
+  opacity: 1;
 }
 
 /* Active + completed stack in writer open-cases box */
@@ -4028,22 +4054,22 @@ label.btn-add-files {
   margin: 0 4px 4px;
   width: calc(100% - 8px);
   box-sizing: border-box;
-  background: #f1f5f9;
+  background: var(--color-surface-muted);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-family: var(--font-heading);
   font-size: 0.6875rem;
   font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--color-navy);
   text-align: left;
   transition: background-color 0.15s ease;
 }
 
 .writer-completed-toggle:hover {
-  background: #e2e8f0;
+  background: var(--color-border);
 }
 
 .writer-completed-chevron {
@@ -4092,12 +4118,35 @@ label.btn-add-files {
   font-family: var(--font-heading);
   font-size: 0.6875rem;
   font-weight: 700;
-  color: var(--color-white);
   padding: 4px 10px;
   border-radius: 999px;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+  text-transform: none;
+  letter-spacing: 0;
 }
+
+/* Tinted status chips (calm/pro): use tone to drive color */
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  background: var(--color-surface-muted);
+  color: var(--color-navy);
+}
+
+.status-chip--neutral { background: var(--color-surface-muted); border-color: rgba(100, 116, 139, 0.25); color: #334155; }
+.status-chip--info    { background: var(--color-primary-soft); border-color: rgba(37, 99, 235, 0.25); color: #1e40af; }
+.status-chip--success { background: var(--color-success-soft); border-color: rgba(34, 197, 94, 0.25); color: #166534; }
+.status-chip--warning { background: var(--color-warning-soft); border-color: rgba(245, 158, 11, 0.25); color: #92400e; }
+.status-chip--danger  { background: var(--color-danger-soft); border-color: rgba(239, 68, 68, 0.25); color: #991b1b; }
+
+/* Recent-activity uses data-tone attribute (keeps markup small) */
+.writer-status-pill[data-tone='neutral'] { background: var(--color-surface-muted); border: 1px solid rgba(100, 116, 139, 0.25); color: #334155; }
+.writer-status-pill[data-tone='info'] { background: var(--color-primary-soft); border: 1px solid rgba(37, 99, 235, 0.25); color: #1e40af; }
+.writer-status-pill[data-tone='success'] { background: var(--color-success-soft); border: 1px solid rgba(34, 197, 94, 0.25); color: #166534; }
+.writer-status-pill[data-tone='warning'] { background: var(--color-warning-soft); border: 1px solid rgba(245, 158, 11, 0.25); color: #92400e; }
+.writer-status-pill[data-tone='danger'] { background: var(--color-danger-soft); border: 1px solid rgba(239, 68, 68, 0.25); color: #991b1b; }
 
 .writer-status-pill-sm {
   font-size: 0.625rem;
@@ -4165,7 +4214,7 @@ label.btn-add-files {
 
 .writer-drop-zone:hover {
   border-color: var(--color-primary);
-  background: rgba(47, 111, 212, 0.03);
+  background: rgba(37, 99, 235, 0.03);
 }
 
 .writer-drop-zone-icon {
@@ -4331,14 +4380,14 @@ label.btn-add-files {
   border: none;
   border-radius: 999px;
   cursor: pointer;
-  box-shadow: 0 4px 16px rgba(47, 111, 212, 0.3);
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.22);
   transition: all 0.15s ease;
 }
 
 .writer-big-create-btn:hover {
-  background: #2860b8;
+  background: var(--color-primary-700);
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(47, 111, 212, 0.4);
+  box-shadow: 0 12px 26px rgba(37, 99, 235, 0.26);
 }
 
 .writer-cta-note {
@@ -4422,26 +4471,26 @@ label.btn-add-files {
   height: 44px;
   padding: 0 18px;
   font-family: var(--font-heading);
-  font-weight: 800;
+  font-weight: 700;
   font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--color-navy);
-  background: white;
-  border: 2px solid var(--color-navy);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
 .btn-kanban-filter:hover {
-  background: #f8fafc;
+  background: var(--color-surface-muted);
 }
 
 .btn-kanban-filter:focus-visible {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(47, 111, 212, 0.15);
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
 }
 
 .kanban-filter-dropdown {
@@ -4481,7 +4530,7 @@ label.btn-add-files {
 
 .kanban-filter-option--active {
   font-weight: 700;
-  background: rgba(47, 111, 212, 0.1);
+  background: var(--color-primary-soft);
   color: var(--color-navy);
 }
 
@@ -4559,21 +4608,21 @@ label.btn-add-files {
 
 .kanban-col-header {
   padding: 10px 14px;
-  border: 2.5px solid var(--color-navy);
+  border: 1px solid var(--color-border-strong);
   border-radius: 10px;
-  background: white;
+  background: var(--color-surface);
   font-family: var(--font-heading);
-  font-weight: 800;
+  font-weight: 750;
   font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  text-transform: none;
+  letter-spacing: 0;
   text-align: center;
   color: var(--color-navy);
 }
 
 .kanban-col-drafting {
   border-color: var(--color-navy);
-  background: #f8fafc;
+  background: var(--color-surface-muted);
 }
 
 .kanban-col-missing {
@@ -4581,7 +4630,7 @@ label.btn-add-files {
 }
 
 .kanban-col-review {
-  border-color: #2f6fd4;
+  border-color: var(--color-primary);
 }
 
 .kanban-col-returned {
@@ -4594,19 +4643,19 @@ label.btn-add-files {
 
 /* Kanban Card */
 .kanban-card {
-  background: white;
-  border: 2px solid var(--color-navy);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
   border-radius: 10px;
   padding: 12px 14px;
   cursor: pointer;
-  box-shadow: 2px 2px 0 rgba(30, 45, 64, 0.1);
+  box-shadow: var(--shadow-sm);
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
 .kanban-card:hover {
   border-color: var(--color-primary);
   transform: translateY(-2px);
-  box-shadow: 3px 3px 0 rgba(30, 45, 64, 0.15);
+  box-shadow: var(--shadow-md);
 }
 
 .kanban-card-completed {

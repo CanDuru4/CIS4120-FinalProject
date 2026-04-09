@@ -18,6 +18,8 @@ type CaseStatus =
   | 'returned'
   | 'completed';
 
+type StatusTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
+
 type User = {
   email: string;
   role: Role;
@@ -1507,19 +1509,19 @@ function DashboardPage({
   // Count of flagged (returned) cases for the writer view
   const flaggedCount = cases.filter(c => c.status === 'returned').length;
 
-  // Get status pill info
-  const getStatusPill = (status: CaseStatus): { label: string; color: string } => {
+  // Get status chip info (tinted UI: tone drives color via CSS)
+  const getStatusChip = (status: CaseStatus): { label: string; tone: StatusTone } => {
     switch (status) {
-      case 'drafting': return { label: 'Draft', color: '#64748b' };
-      case 'missing_ev': return { label: 'Missing Ev.', color: '#f59e0b' };
+      case 'drafting': return { label: 'Draft', tone: 'neutral' };
+      case 'missing_ev': return { label: 'Missing ev', tone: 'warning' };
       case 'ready_review':
         return user.role === 'writer'
-          ? { label: 'Submitted', color: '#2f6fd4' }
-          : { label: 'Head Reviewer', color: '#2f6fd4' };
-      case 'ceo_review': return { label: 'Pending CEO', color: '#0e7490' };
-      case 'returned': return { label: 'Returned', color: '#ef4444' };
-      case 'completed': return { label: 'Completed', color: '#22c55e' };
-      default: return { label: 'New', color: '#22c55e' };
+          ? { label: 'Submitted', tone: 'info' }
+          : { label: 'Head reviewer', tone: 'info' };
+      case 'ceo_review': return { label: 'Pending CEO', tone: 'info' };
+      case 'returned': return { label: 'Returned', tone: 'danger' };
+      case 'completed': return { label: 'Completed', tone: 'success' };
+      default: return { label: 'New', tone: 'success' };
     }
   };
 
@@ -1587,7 +1589,7 @@ function DashboardPage({
       <div className="dashboard-container">
         <div className="dashboard-card">
           <header className="dashboard-header">
-            <h1 className="dashboard-title">DASHBOARD</h1>
+            <h1 className="dashboard-title">Dashboard</h1>
 
             <div className="header-actions">
               <div className="notification-wrapper notification-bell-trigger">
@@ -1670,7 +1672,7 @@ function DashboardPage({
                         </div>
                       ) : (
                         writerActiveCases.map(c => {
-                          const statusPill = getStatusPill(c.status);
+                          const statusChip = getStatusChip(c.status);
                           return (
                             <div
                               key={c.id}
@@ -1684,11 +1686,8 @@ function DashboardPage({
                                 </svg>
                               </div>
                               <span className="writer-case-name">{c.title}</span>
-                              <span
-                                className="writer-status-pill"
-                                style={{ backgroundColor: statusPill.color }}
-                              >
-                                {statusPill.label}
+                              <span className={`writer-status-pill status-chip status-chip--${statusChip.tone}`}>
+                                {statusChip.label}
                               </span>
                             </div>
                           );
@@ -1720,7 +1719,7 @@ function DashboardPage({
                         {writerCompletedExpanded && (
                           <div className="writer-cases-list writer-completed-cases-list">
                             {writerCompletedCases.map(c => {
-                              const statusPill = getStatusPill(c.status);
+                              const statusChip = getStatusChip(c.status);
                               return (
                                 <div
                                   key={c.id}
@@ -1734,11 +1733,8 @@ function DashboardPage({
                                     </svg>
                                   </div>
                                   <span className="writer-case-name">{c.title}</span>
-                                  <span
-                                    className="writer-status-pill"
-                                    style={{ backgroundColor: statusPill.color }}
-                                  >
-                                    {statusPill.label}
+                                  <span className={`writer-status-pill status-chip status-chip--${statusChip.tone}`}>
+                                    {statusChip.label}
                                   </span>
                                 </div>
                               );
@@ -1804,7 +1800,7 @@ function DashboardPage({
                       </div>
                     ) : (
                       recentActivity.map(activity => {
-                        const statusPill = getStatusPill(activity.status);
+                        const statusChip = getStatusChip(activity.status);
                         return (
                           <div key={activity.id} className="writer-activity-item" onClick={() => onOpenCase(activity.id)}>
                             <div className="writer-case-icon">
@@ -1818,9 +1814,9 @@ function DashboardPage({
                                 <span className="writer-activity-title">{activity.title}</span>
                                 <span
                                   className="writer-status-pill writer-status-pill-sm"
-                                  style={{ backgroundColor: statusPill.color }}
+                                  data-tone={statusChip.tone}
                                 >
-                                  {statusPill.label}
+                                  {statusChip.label}
                                 </span>
                               </div>
                               <div className="writer-activity-meta">
@@ -2174,7 +2170,7 @@ function DashboardPage({
     <div className="dashboard-container">
       <div className="dashboard-card">
         <header className="dashboard-header">
-          <h1 className="dashboard-title">DASHBOARD</h1>
+          <h1 className="dashboard-title">Dashboard</h1>
 
           <div className="header-actions">
             <div className="kanban-filter-wrapper">
@@ -3485,7 +3481,7 @@ function CaseEditorPage({
             </svg>
           </button>
           <div className="dashboard-title-block">
-            <h1 className="dashboard-title">{currentCase.title.toUpperCase()}</h1>
+            <h1 className="dashboard-title">{currentCase.title}</h1>
             {showEditorUnsavedHint && (
               <span className="editor-unsaved-hint" role="status">
                 Not saved
@@ -4990,7 +4986,7 @@ function ReviewMatrixPage({
             </svg>
           </button>
           <div className="dashboard-title-block">
-            <h1 className="dashboard-title">{currentCase.title.toUpperCase()}</h1>
+            <h1 className="dashboard-title">{currentCase.title}</h1>
             {showMatrixUnsavedHint && (
               <span className="editor-unsaved-hint" role="status">
                 Not saved
