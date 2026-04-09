@@ -37,6 +37,15 @@ Sample PDFs for demos live in [`sample_pdfs/`](sample_pdfs/).
 6. **Review matrix** — Field × document grid for reviewers; inspection modal with evidence preview; CEO path to customs completion where applicable.
 7. **Persistence** — Case and session state stored in **localStorage**; a sync channel can reflect updates across tabs in the same browser.
 
+## UI & accessibility
+
+- **Theme** — Neutral surfaces with a blue primary accent; tokens live in [`src/port5176/port5176.css`](src/port5176/port5176.css) (`:root` CSS variables).
+- **Primary actions** — Strong, high-contrast styling for important buttons (e.g. **Submit case**, **Save draft** in the **Unsaved work** dialog for both writer and matrix, matrix **Submit to CEO** / destructive actions, **Return** in the return-files modal) so the default action reads clearly.
+- **Secondary actions** — Cancel / **Don’t save** in the unsaved-work flow use an outlined secondary style so they are visibly less prominent than **Save draft**.
+- **Modals & copy** — Return-files warning uses a filled warning icon; textarea placeholders and body text in key dialogs use darker grays for readability on white.
+- **Read-only modes** — Writers and lead reviewers see locked controls when case status (or role) does not allow edits (e.g. post-submit / CEO review / completed), with matching disabled styling in the editor and matrix.
+- **Dashboard polish** — Writer status chips and **Recent activity** ordering reflect meaningful states and latest touchpoints (case activity plus notifications).
+
 ## Build & preview
 
 ```bash
