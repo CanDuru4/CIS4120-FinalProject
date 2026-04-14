@@ -321,6 +321,8 @@ function evidenceLinkAnchorsInView(
   fieldEl: HTMLElement | null,
   docViewerEl: HTMLDivElement | null,
   declarantScrollEl: HTMLDivElement | null,
+  /** When set, declarant anchor is the drag handle center (matches link path + trash chip). */
+  dragHandleEl: HTMLElement | null,
 ): boolean {
   if (!regionEl || !fieldEl || !docViewerEl) return false;
 
@@ -330,8 +332,16 @@ function evidenceLinkAnchorsInView(
   if (!clientPointInsideRect(rcx, rcy, docViewerEl.getBoundingClientRect())) return false;
 
   const fr = fieldEl.getBoundingClientRect();
-  const fcx = fr.right;
-  const fcy = fr.top + fr.height / 2;
+  let fcx: number;
+  let fcy: number;
+  if (dragHandleEl) {
+    const dr = dragHandleEl.getBoundingClientRect();
+    fcx = dr.left + dr.width / 2;
+    fcy = dr.top + dr.height / 2;
+  } else {
+    fcx = fr.right;
+    fcy = fr.top + fr.height / 2;
+  }
   if (!declarantScrollEl) return true;
   return clientPointInsideRect(fcx, fcy, declarantScrollEl.getBoundingClientRect());
 }
@@ -407,6 +417,19 @@ function migrateMatrixManualConflictKeys(docs: UploadedDoc[], rawKeys: string[])
     }
   }
   return out;
+}
+
+/** Remove an attachment and all highlights / links / matrix flags scoped to that file. */
+function removeDocFromCase(c: Case, docIdToRemove: string): Case {
+  const docs = c.docs.filter(d => d.id !== docIdToRemove);
+  const regions = c.regions.filter(r => r.docId !== docIdToRemove);
+  const links = c.links.filter(l => l.docId !== docIdToRemove);
+  const matrixManualConflicts = c.matrixManualConflicts.filter(k => {
+    const i = k.indexOf(':');
+    if (i < 0) return true;
+    return k.slice(i + 1) !== docIdToRemove;
+  });
+  return normalizeCase({ ...c, docs, regions, links, matrixManualConflicts });
 }
 
 type AppState = {
@@ -758,6 +781,24 @@ function skipUnsavedLeaveStored(): boolean {
 function persistSkipUnsavedLeave(): void {
   try {
     localStorage.setItem(LS_SKIP_UNSAVED_LEAVE, '1');
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+const LS_SKIP_DELETE_ATTACHMENT = 'port5176_skipConfirmDeleteAttachment';
+
+function skipDeleteAttachmentConfirmStored(): boolean {
+  try {
+    return localStorage.getItem(LS_SKIP_DELETE_ATTACHMENT) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function persistSkipDeleteAttachmentConfirm(): void {
+  try {
+    localStorage.setItem(LS_SKIP_DELETE_ATTACHMENT, '1');
   } catch {
     /* ignore quota / private mode */
   }
@@ -2491,6 +2532,11 @@ function CaseEditorPage({
   /** When true, clicks on the document add a highlight (avoids accidental placement). */
   const [markEvidenceMode, setMarkEvidenceMode] = useState(false);
   const [docEmptyHintDismissed, setDocEmptyHintDismissed] = useState(false);
+  const [attachmentDeletePrompt, setAttachmentDeletePrompt] = useState<{
+    docId: string;
+    name: string;
+  } | null>(null);
+  const [attachmentDeleteRemember, setAttachmentDeleteRemember] = useState(false);
 
   // Refs for arrow positioning
   const editorRef = useRef<HTMLDivElement>(null);
@@ -2506,6 +2552,17 @@ function CaseEditorPage({
     others: null,
   });
   const regionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const dragHandleRefs = useRef<Record<DeclarantField, HTMLDivElement | null>>({
+    hsCode: null,
+    originCountry: null,
+    destCountry: null,
+    invoiceAmount: null,
+    netWeight: null,
+    grossWeight: null,
+    exitCustoms: null,
+    iban: null,
+    others: null,
+  });
   const docViewerRef = useRef<HTMLDivElement>(null);
   const declarantFieldsRef = useRef<HTMLDivElement>(null);
   const pdfLayoutRef = useRef<PdfPageLayoutInfo | null>(null);
@@ -2624,17 +2681,26 @@ function CaseEditorPage({
     setDocEmptyHintDismissed(false);
   }, [activeDocId]);
 
-  // Get field position relative to editor container
+  // Declarant link origin: center of the drag handle (blue ring), not the row’s right edge — matches trash chip + path start.
   const getFieldPosition = useCallback((field: DeclarantField): { x: number; y: number } | null => {
-    const fieldEl = fieldRefs.current[field];
     const editorEl = editorRef.current;
-    if (!fieldEl || !editorEl) return null;
-
-    const fieldRect = fieldEl.getBoundingClientRect();
+    if (!editorEl) return null;
     const editorRect = editorEl.getBoundingClientRect();
 
+    const dh = dragHandleRefs.current[field];
+    if (dh) {
+      const r = dh.getBoundingClientRect();
+      return {
+        x: r.left + r.width / 2 - editorRect.left,
+        y: r.top + r.height / 2 - editorRect.top,
+      };
+    }
+
+    const fieldEl = fieldRefs.current[field];
+    if (!fieldEl) return null;
+    const fieldRect = fieldEl.getBoundingClientRect();
     return {
-      x: fieldRect.right - editorRect.left,
+      x: fieldRect.right - editorRect.left - 9,
       y: fieldRect.top + fieldRect.height / 2 - editorRect.top,
     };
   }, []);
@@ -3553,6 +3619,72 @@ function CaseEditorPage({
     event.target.value = '';
   };
 
+  const performRemoveDocument = useCallback(
+    (docId: string) => {
+      if (editorReadOnly) return;
+      if (isWriterEditorLocked(cases, caseId)) return;
+      const c = cases.find(x => x.id === caseId);
+      if (!c?.docs.some(d => d.id === docId)) return;
+      setCases(prev =>
+        prev.map(x => (x.id === caseId ? removeDocFromCase(x, docId) : x)),
+      );
+      setSelectedRegion(prev => {
+        if (!prev) return null;
+        const reg = c.regions.find(r => r.id === prev);
+        if (reg?.docId === docId) return null;
+        return prev;
+      });
+    },
+    [caseId, cases, editorReadOnly, setCases],
+  );
+
+  const requestRemoveDocument = useCallback(
+    (docId: string) => {
+      if (editorReadOnly) return;
+      if (isWriterEditorLocked(cases, caseId)) return;
+      const c = cases.find(x => x.id === caseId);
+      const doc = c?.docs.find(d => d.id === docId);
+      if (!doc) return;
+      if (skipDeleteAttachmentConfirmStored()) {
+        performRemoveDocument(docId);
+        return;
+      }
+      setAttachmentDeleteRemember(false);
+      setAttachmentDeletePrompt({ docId, name: doc.name });
+    },
+    [caseId, cases, editorReadOnly, performRemoveDocument],
+  );
+
+  const confirmAttachmentDelete = useCallback(() => {
+    if (!attachmentDeletePrompt) return;
+    if (attachmentDeleteRemember) persistSkipDeleteAttachmentConfirm();
+    performRemoveDocument(attachmentDeletePrompt.docId);
+    setAttachmentDeletePrompt(null);
+  }, [attachmentDeletePrompt, attachmentDeleteRemember, performRemoveDocument]);
+
+  const cancelAttachmentDelete = useCallback(() => {
+    setAttachmentDeletePrompt(null);
+  }, []);
+
+  /**
+   * Click away from a selected highlight on the declarant / chrome side.
+   * When Mark evidence is on, do not clear on pointerdown over `.doc-preview` — that would run
+   * before `click`, so the same gesture would deselect then immediately add a new region.
+   */
+  const handleEditorPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (editorReadOnly) return;
+      if (selectedRegion == null) return;
+      const t = e.target as HTMLElement;
+      if (t.closest('.region-marker')) return;
+      if (t.closest('.link-label-group')) return;
+      if (t.closest('.doc-preview-mark-toggle')) return;
+      if (markEvidenceMode && t.closest('.doc-preview')) return;
+      setSelectedRegion(null);
+    },
+    [editorReadOnly, markEvidenceMode, selectedRegion],
+  );
+
   const handleAddComment = (text: string) => {
     if (editorReadOnly) return;
     if (!text.trim()) return;
@@ -3653,13 +3785,13 @@ function CaseEditorPage({
         )}
 
         <main className="editor-main">
-          <div className="editor-panels" ref={editorRef}>
+          <div className="editor-panels" ref={editorRef} onPointerDown={handleEditorPointerDown}>
             {/* SVG ARROW OVERLAY */}
             <svg
               className={`editor-svg-overlay${editorReadOnly ? ' editor-svg-overlay--readonly' : ''}`}
             >
               <defs>
-                {/* Blue arrowhead — midpoint trash control uses its own red pill (link-label-bg). */}
+                {/* Blue arrowhead — unlink chip at declarant anchor (same colors as `.doc-tab-close`). */}
                 <marker
                   id="arrowhead-blue"
                   markerWidth="10"
@@ -3709,6 +3841,7 @@ function CaseEditorPage({
                     fieldRefs.current[link.field],
                     docViewerRef.current,
                     declarantFieldsRef.current,
+                    dragHandleRefs.current[link.field],
                   )
                 ) {
                   return null;
@@ -3727,7 +3860,7 @@ function CaseEditorPage({
                         link.status === 'conflict' ? 'url(#arrowhead-conflict)' : 'url(#arrowhead-blue)'
                       }
                     />
-                    {/* Midpoint control: remove evidence link */}
+                    {/* Remove-link control at declarant anchor (arrow origin), Chrome-style */}
                     <g
                       className="link-label-group"
                       onClick={() => {
@@ -3735,20 +3868,31 @@ function CaseEditorPage({
                       }}
                     >
                       <title>{`Remove evidence link (${FIELD_LABELS[link.field]})`}</title>
-                      <g transform={`translate(${midX}, ${midY})`}>
-                        <rect
-                          x={-14}
-                          y={-14}
-                          width={28}
-                          height={28}
-                          rx={8}
-                          className="link-label-bg"
-                        />
-                        <path
-                          fill="#ffffff"
-                          transform="translate(-12, -12)"
-                          d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zm13-14h-3.5l-1-1h-5l-1 1H5v2h14V4z"
-                        />
+                      <g transform={`translate(${fieldPos.x}, ${fieldPos.y})`}>
+                        {/* Optical nudge: anchor reads slightly left of the drag ring + line join */}
+                        <g transform="translate(1.75, 0)">
+                        <g className="link-trash-scale">
+                          <circle r={11} className="link-unlink-chip-bg" />
+                          <svg
+                            className="link-unlink-trash-svg"
+                            x={-11}
+                            y={-11}
+                            width={22}
+                            height={22}
+                            viewBox="0 0 24 24"
+                            aria-hidden={true}
+                          >
+                            <g transform="translate(12, 12) scale(0.66) translate(-12, -12)">
+                              <g transform="translate(0.35, 0)">
+                                <path
+                                  fill="currentColor"
+                                  d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zm13-14h-3.5l-1-1h-5l-1 1H5v2h14V4z"
+                                />
+                              </g>
+                            </g>
+                          </svg>
+                        </g>
+                        </g>
                       </g>
                     </g>
                     {/* Conflict marker */}
@@ -3871,6 +4015,9 @@ function CaseEditorPage({
                           ) : null}
                           {!editorReadOnly ? (
                             <div
+                              ref={(el) => {
+                                dragHandleRefs.current[field] = el;
+                              }}
                               className={`drag-handle ${hasLink ? 'has-link' : ''} ${draggingField === field ? 'dragging' : ''}`}
                               onMouseDown={(e) => startFieldDrag(field, e)}
                             >
@@ -3929,17 +4076,36 @@ function CaseEditorPage({
                     <div className="doc-tabs-strip">
                       <div className="doc-tabs" role="tablist" aria-label="Uploaded files">
                         {currentCase.docs.map(doc => (
-                          <button
+                          <div
                             key={doc.id}
-                            type="button"
-                            role="tab"
-                            aria-selected={activeDocId === doc.id}
-                            className={`doc-tab ${activeDocId === doc.id ? 'active' : ''}`}
-                            onClick={() => setActiveDocId(doc.id)}
-                            title={doc.name}
+                            className={`doc-tab-item${activeDocId === doc.id ? ' doc-tab-item--active' : ''}`}
+                            role="none"
                           >
-                            {truncateTabLabel(doc.name)}
-                          </button>
+                            <button
+                              type="button"
+                              role="tab"
+                              aria-selected={activeDocId === doc.id}
+                              className="doc-tab"
+                              onClick={() => setActiveDocId(doc.id)}
+                              title={doc.name}
+                            >
+                              {truncateTabLabel(doc.name)}
+                            </button>
+                            {!editorReadOnly && (
+                              <button
+                                type="button"
+                                className="doc-tab-close"
+                                aria-label={`Remove ${doc.name}`}
+                                title="Remove file"
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  requestRemoveDocument(doc.id);
+                                }}
+                              >
+                                <span aria-hidden>×</span>
+                              </button>
+                            )}
+                          </div>
                         ))}
                       </div>
                       <label
@@ -4034,20 +4200,14 @@ function CaseEditorPage({
                           const el = e.target as HTMLElement;
                           if (el.closest('.doc-preview-mark-toggle')) return;
                           if (el.closest('.doc-hint-dismiss')) return;
-                          if (
-                            editorReadOnly ||
-                            !markEvidenceMode ||
-                            !activeDocId ||
-                            currentDocs.length === 0 ||
-                            el.closest('.region-marker') !== null
-                          ) {
-                            return;
-                          }
-                          /* Selected highlight: first background click deselects only; next click adds a new circle */
+                          if (editorReadOnly || !activeDocId || currentDocs.length === 0) return;
+                          if (el.closest('.region-marker') !== null) return;
+                          /* Background click: always clear highlight selection (with or without Mark evidence). */
                           if (selectedRegion !== null) {
                             setSelectedRegion(null);
                             return;
                           }
+                          if (!markEvidenceMode) return;
                           addDocumentRegion(activeDocId, e);
                         }}
                       >
@@ -4146,11 +4306,21 @@ function CaseEditorPage({
                                               removeRegion(region.id);
                                             }}
                                           >
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden={true}>
-                                              <polyline points="3 6 5 6 21 6"></polyline>
-                                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                                              <line x1="10" y1="11" x2="10" y2="17"></line>
-                                              <line x1="14" y1="11" x2="14" y2="17"></line>
+                                            <svg
+                                              className="region-marker-trash-icon"
+                                              width={22}
+                                              height={22}
+                                              viewBox="0 0 24 24"
+                                              aria-hidden={true}
+                                            >
+                                              <g transform="translate(12, 12) scale(0.66) translate(-12, -12)">
+                                                <g transform="translate(0.35, 0)">
+                                                  <path
+                                                    fill="currentColor"
+                                                    d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zm13-14h-3.5l-1-1h-5l-1 1H5v2h14V4z"
+                                                  />
+                                                </g>
+                                              </g>
                                             </svg>
                                           </button>
                                         )}
@@ -4234,11 +4404,21 @@ function CaseEditorPage({
                                             removeRegion(region.id);
                                           }}
                                         >
-                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden={true}>
-                                            <polyline points="3 6 5 6 21 6"></polyline>
-                                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                                            <line x1="10" y1="11" x2="10" y2="17"></line>
-                                            <line x1="14" y1="11" x2="14" y2="17"></line>
+                                          <svg
+                                            className="region-marker-trash-icon"
+                                            width={22}
+                                            height={22}
+                                            viewBox="0 0 24 24"
+                                            aria-hidden={true}
+                                          >
+                                            <g transform="translate(12, 12) scale(0.66) translate(-12, -12)">
+                                              <g transform="translate(0.35, 0)">
+                                                <path
+                                                  fill="currentColor"
+                                                  d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zm13-14h-3.5l-1-1h-5l-1 1H5v2h14V4z"
+                                                />
+                                              </g>
+                                            </g>
                                           </svg>
                                         </button>
                                       )}
@@ -4495,6 +4675,34 @@ function CaseEditorPage({
         </div>
       )}
 
+      {attachmentDeletePrompt && (
+        <div className="modal-overlay" onClick={cancelAttachmentDelete}>
+          <div className="modal-card unsaved-leave-modal" onClick={e => e.stopPropagation()}>
+            <h3 className="modal-title">Remove this file?</h3>
+            <p className="unsaved-leave-text">
+              <strong>{attachmentDeletePrompt.name}</strong> will be removed from this case. Any highlights
+              and evidence links on this file will be deleted. This cannot be undone.
+            </p>
+            <label className="unsaved-leave-checkbox">
+              <input
+                type="checkbox"
+                checked={attachmentDeleteRemember}
+                onChange={e => setAttachmentDeleteRemember(e.target.checked)}
+              />
+              <span>Don&apos;t ask again when I delete a file</span>
+            </label>
+            <div className="modal-actions unsaved-leave-actions">
+              <button type="button" className="btn btn-modal-cancel" onClick={cancelAttachmentDelete}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-danger" onClick={confirmAttachmentDelete}>
+                Remove file
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {unsavedLeaveOpen && (
         <div className="modal-overlay" onClick={() => setUnsavedLeaveOpen(false)}>
           <div className="modal-card unsaved-leave-modal" onClick={(e) => e.stopPropagation()}>
@@ -4637,6 +4845,11 @@ function ReviewMatrixPage({
   const matrixDirtyRef = useRef(false);
   const matrixPendingLeaveRef = useRef<'return' | 'back' | null>(null);
   const [matrixSidebarDocId, setMatrixSidebarDocId] = useState<string | null>(null);
+  const [matrixAttachmentDeletePrompt, setMatrixAttachmentDeletePrompt] = useState<{
+    docId: string;
+    name: string;
+  } | null>(null);
+  const [matrixAttachmentDeleteRemember, setMatrixAttachmentDeleteRemember] = useState(false);
 
   useEffect(() => {
     if (!currentCase) return;
@@ -4992,6 +5205,55 @@ function ReviewMatrixPage({
     });
     event.target.value = '';
   };
+
+  const performMatrixRemoveDocument = useCallback(
+    (docId: string) => {
+      if (matrixReadOnly) return;
+      const c = cases.find(x => x.id === caseId);
+      if (!c?.docs.some(d => d.id === docId)) return;
+      setCases(prev =>
+        prev.map(x => (x.id === caseId ? removeDocFromCase(x, docId) : x)),
+      );
+      setInspectingCell(prev => (prev?.docId === docId ? null : prev));
+      setMatrixSidebarDocId(prev => {
+        if (prev !== docId) return prev;
+        const next = c.docs.filter(d => d.id !== docId);
+        return next[0]?.id ?? null;
+      });
+    },
+    [caseId, cases, matrixReadOnly, setCases, setInspectingCell],
+  );
+
+  const requestMatrixRemoveDocument = useCallback(
+    (docId: string) => {
+      if (matrixReadOnly) return;
+      const c = cases.find(x => x.id === caseId);
+      const doc = c?.docs.find(d => d.id === docId);
+      if (!doc) return;
+      if (skipDeleteAttachmentConfirmStored()) {
+        performMatrixRemoveDocument(docId);
+        return;
+      }
+      setMatrixAttachmentDeleteRemember(false);
+      setMatrixAttachmentDeletePrompt({ docId, name: doc.name });
+    },
+    [caseId, cases, matrixReadOnly, performMatrixRemoveDocument],
+  );
+
+  const confirmMatrixAttachmentDelete = useCallback(() => {
+    if (!matrixAttachmentDeletePrompt) return;
+    if (matrixAttachmentDeleteRemember) persistSkipDeleteAttachmentConfirm();
+    performMatrixRemoveDocument(matrixAttachmentDeletePrompt.docId);
+    setMatrixAttachmentDeletePrompt(null);
+  }, [
+    matrixAttachmentDeletePrompt,
+    matrixAttachmentDeleteRemember,
+    performMatrixRemoveDocument,
+  ]);
+
+  const cancelMatrixAttachmentDelete = useCallback(() => {
+    setMatrixAttachmentDeletePrompt(null);
+  }, []);
 
   const handleReturn = () => {
     if (matrixReadOnly) return;
@@ -5372,17 +5634,36 @@ function ReviewMatrixPage({
                       <div className="matrix-doc-tabs-strip">
                         <div className="matrix-doc-tabs" role="tablist" aria-label="Case attachments">
                           {currentCase.docs.map(doc => (
-                            <button
+                            <div
                               key={doc.id}
-                              type="button"
-                              role="tab"
-                              aria-selected={matrixSidebarDocId === doc.id}
-                              className={`matrix-doc-tab ${matrixSidebarDocId === doc.id ? 'active' : ''}`}
-                              onClick={() => setMatrixSidebarDocId(doc.id)}
-                              title={doc.name}
+                              className={`matrix-doc-tab-item${matrixSidebarDocId === doc.id ? ' matrix-doc-tab-item--active' : ''}`}
+                              role="none"
                             >
-                              {truncateTabLabel(doc.name, 18)}
-                            </button>
+                              <button
+                                type="button"
+                                role="tab"
+                                aria-selected={matrixSidebarDocId === doc.id}
+                                className="matrix-doc-tab"
+                                onClick={() => setMatrixSidebarDocId(doc.id)}
+                                title={doc.name}
+                              >
+                                {truncateTabLabel(doc.name, 18)}
+                              </button>
+                              {!matrixReadOnly && (
+                                <button
+                                  type="button"
+                                  className="matrix-doc-tab-close"
+                                  aria-label={`Remove ${doc.name}`}
+                                  title="Remove file"
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    requestMatrixRemoveDocument(doc.id);
+                                  }}
+                                >
+                                  <span aria-hidden>×</span>
+                                </button>
+                              )}
+                            </div>
                           ))}
                         </div>
                         <label
@@ -5668,6 +5949,34 @@ function ReviewMatrixPage({
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {matrixAttachmentDeletePrompt && (
+        <div className="modal-overlay" onClick={cancelMatrixAttachmentDelete}>
+          <div className="modal-card unsaved-leave-modal" onClick={e => e.stopPropagation()}>
+            <h3 className="modal-title">Remove this file?</h3>
+            <p className="unsaved-leave-text">
+              <strong>{matrixAttachmentDeletePrompt.name}</strong> will be removed from this case. Any highlights
+              and evidence links on this file will be deleted. This cannot be undone.
+            </p>
+            <label className="unsaved-leave-checkbox">
+              <input
+                type="checkbox"
+                checked={matrixAttachmentDeleteRemember}
+                onChange={e => setMatrixAttachmentDeleteRemember(e.target.checked)}
+              />
+              <span>Don&apos;t ask again when I delete a file</span>
+            </label>
+            <div className="modal-actions unsaved-leave-actions">
+              <button type="button" className="btn btn-modal-cancel" onClick={cancelMatrixAttachmentDelete}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-danger" onClick={confirmMatrixAttachmentDelete}>
+                Remove file
+              </button>
             </div>
           </div>
         </div>

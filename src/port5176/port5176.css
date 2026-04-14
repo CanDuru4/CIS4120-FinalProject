@@ -24,6 +24,7 @@
   --color-danger: #dc2626;
   --color-danger-soft: rgba(239, 68, 68, 0.12);
   --color-danger-700: #b91c1c;
+
   --color-warning: #d97706;
   --color-warning-soft: rgba(245, 158, 11, 0.14);
 
@@ -42,6 +43,12 @@
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 1px rgba(15, 23, 42, 0.04);
   --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.10);
   --shadow-lg: 0 18px 48px rgba(15, 23, 42, 0.14);
+
+  /* Clickable hover — darker than surface-muted / *-soft for clear feedback */
+  --hover-surface: #e2e8f0;
+  --hover-surface-strong: #cbd5e1;
+  --hover-primary-fill: rgba(37, 99, 235, 0.24);
+  --hover-primary-fill-strong: rgba(37, 99, 235, 0.32);
 }
 
 /* ============== RESET & BASE ============== */
@@ -321,8 +328,8 @@ select:focus-visible {
 }
 
 .btn-toggle-password:hover {
-  color: var(--color-primary);
-  background: var(--color-primary-soft);
+  color: var(--color-primary-700);
+  background: var(--hover-primary-fill);
 }
 
 .btn-toggle-password:focus-visible {
@@ -365,7 +372,9 @@ select:focus-visible {
 }
 
 .btn-primary:hover {
-  background: rgba(37, 99, 235, 0.16);
+  background: var(--hover-primary-fill-strong);
+  border-color: rgba(37, 99, 235, 0.45);
+  color: var(--color-primary-700);
   box-shadow: none;
 }
 
@@ -377,7 +386,8 @@ select:focus-visible {
 }
 
 .btn-success:hover {
-  background: rgba(34, 197, 94, 0.18);
+  background: rgba(34, 197, 94, 0.28);
+  border-color: rgba(22, 163, 74, 0.45);
   box-shadow: none;
 }
 
@@ -389,7 +399,8 @@ select:focus-visible {
 }
 
 .btn-danger:hover {
-  background: rgba(239, 68, 68, 0.18);
+  background: rgba(239, 68, 68, 0.28);
+  border-color: rgba(220, 38, 38, 0.45);
   box-shadow: none;
 }
 
@@ -415,7 +426,7 @@ select:focus-visible {
 }
 
 .link-btn:hover {
-  color: #2860b8;
+  color: #1e3a8a;
 }
 
 /* ============== AUTH SWITCH ============== */
@@ -551,7 +562,9 @@ select:focus-visible {
 }
 
 .btn-kanban-filter:hover {
-  background: var(--color-surface-muted);
+  background: var(--hover-surface);
+  border-color: var(--color-navy);
+  color: var(--color-navy);
 }
 
 .btn-kanban-filter:focus-visible {
@@ -592,7 +605,8 @@ select:focus-visible {
 }
 
 .kanban-filter-option:hover {
-  background: #f1f5f9;
+  background: var(--hover-surface);
+  color: var(--color-navy);
 }
 
 .kanban-filter-option--active {
@@ -623,7 +637,7 @@ select:focus-visible {
 }
 
 .kanban-filter-checkbox-row:hover {
-  background: #f1f5f9;
+  background: var(--hover-surface);
 }
 
 .kanban-filter-checkbox-row input[type="checkbox"] {
@@ -726,14 +740,16 @@ select:focus-visible {
   padding: 12px 14px;
   cursor: pointer;
   box-shadow: var(--shadow-sm);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease,
+    background-color 0.15s ease;
   text-align: left;
   width: 100%;
   font-family: var(--font-body);
 }
 
 .kanban-card:hover {
-  border-color: var(--color-primary);
+  border-color: var(--color-primary-700);
+  background: var(--hover-surface);
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
 }
@@ -769,7 +785,8 @@ select:focus-visible {
 }
 
 .kanban-card-delete:hover {
-  background: #fef2f2;
+  background: #fecaca;
+  color: var(--color-danger-700);
   transform: scale(1.05);
 }
 
@@ -877,8 +894,8 @@ select:focus-visible {
 }
 
 .kanban-completed-toggle:hover {
-  background: rgba(34, 197, 94, 0.18);
-  border-color: rgba(34, 197, 94, 0.4);
+  background: rgba(34, 197, 94, 0.28);
+  border-color: rgba(22, 163, 74, 0.55);
   transform: none;
 }
 
@@ -900,7 +917,8 @@ select:focus-visible {
 }
 
 .kanban-submission-row:hover {
-  border-color: #22c55e;
+  border-color: #15803d;
+  background: rgba(34, 197, 94, 0.12);
 }
 
 .kanban-submission-info {
@@ -966,7 +984,8 @@ select:focus-visible {
 }
 
 .notification-btn:hover {
-  background: #f1f5f9;
+  background: var(--hover-surface);
+  color: var(--color-navy);
 }
 
 .notification-badge {
@@ -1056,8 +1075,8 @@ select:focus-visible {
 }
 
 .notification-flyout-close:hover {
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
+  background: var(--hover-primary-fill);
+  color: var(--color-primary-700);
 }
 
 .notification-flyout-panel .notification-popup-body {
@@ -1142,7 +1161,7 @@ select:focus-visible {
 }
 
 .notification-close:hover {
-  background: #f1f5f9;
+  background: var(--hover-surface);
   color: var(--color-navy);
 }
 
@@ -1195,8 +1214,8 @@ select:focus-visible {
 }
 
 .notification-dismiss:hover {
-  background: #fef2f2;
-  color: var(--color-danger);
+  background: #fecaca;
+  color: var(--color-danger-700);
 }
 
 /* ============== OUTLINE BUTTON ============== */
@@ -1232,11 +1251,7 @@ select:focus-visible {
   border-radius: 50%;
   cursor: pointer;
   border: none;
-  transition: opacity 0.15s ease;
-}
-
-.user-avatar:hover {
-  opacity: 0.85;
+  transition: opacity 0.15s ease, filter 0.15s ease;
 }
 
 .user-menu {
@@ -1295,7 +1310,8 @@ select:focus-visible {
 }
 
 .user-menu-item:hover {
-  background: #fff1f2;
+  background: #fecaca;
+  color: #7f1d1d;
   transform: none;
 }
 
@@ -1330,6 +1346,7 @@ select:focus-visible {
 .status-lane:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
+  background: var(--hover-surface);
 }
 
 .status-lane.active {
@@ -1377,12 +1394,15 @@ select:focus-visible {
   box-shadow: var(--shadow-sm);
   padding: 20px;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease,
+    background-color 0.15s ease;
 }
 
 .case-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
+  border-color: var(--color-primary-700);
+  background: var(--hover-surface);
 }
 
 .case-card-header {
@@ -1440,7 +1460,8 @@ select:focus-visible {
 }
 
 .btn-back:hover {
-  background: var(--color-surface-muted);
+  background: var(--hover-surface);
+  border-color: var(--color-navy);
   color: var(--color-navy);
 }
 
@@ -1646,11 +1667,12 @@ select:focus-visible {
 }
 
 .btn-icon:hover {
-  background: #f1f5f9;
+  background: var(--hover-surface);
+  color: var(--color-navy);
 }
 
 .btn-edit:hover {
-  color: var(--color-primary);
+  color: var(--color-primary-700);
 }
 
 .btn-save {
@@ -1658,7 +1680,8 @@ select:focus-visible {
 }
 
 .btn-save:hover {
-  background: #dcfce7;
+  background: #bbf7d0;
+  color: #14532d;
 }
 
 .btn-cancel {
@@ -1666,7 +1689,8 @@ select:focus-visible {
 }
 
 .btn-cancel:hover {
-  background: #fef2f2;
+  background: #fecaca;
+  color: var(--color-danger-700);
 }
 
 /* drag-handle styles moved to DRAG HANDLE ENHANCEMENTS section */
@@ -1740,6 +1764,87 @@ select:focus-visible {
   flex-wrap: nowrap;
   gap: 4px;
   flex-shrink: 0;
+  align-items: stretch;
+}
+
+/* Chrome-style tab: label + close control */
+.doc-tab-item {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: stretch;
+  flex-shrink: 0;
+  max-width: 200px;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.doc-tab-item:hover {
+  background: var(--hover-surface);
+}
+
+.doc-tab-item--active {
+  border-bottom-color: var(--color-primary);
+}
+
+.doc-tab-item--active .doc-tab {
+  color: var(--color-primary);
+}
+
+.doc-tab-item .doc-tab {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+  margin-bottom: 0;
+  border-bottom: none;
+  padding: 12px 4px 12px 12px;
+}
+
+.doc-tab-item .doc-tab:hover {
+  background: transparent;
+  color: var(--color-navy);
+}
+
+.doc-tab-item--active .doc-tab:hover {
+  color: var(--color-primary);
+}
+
+.doc-tab-close {
+  flex-shrink: 0;
+  align-self: center;
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  padding: 0;
+  margin: 0 6px 0 2px;
+  border: 1px solid #e2e8f0;
+  background: #f1f5f9;
+  color: #1e293b;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    color 0.12s ease,
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    transform 0.12s ease;
+}
+
+.doc-tab-close:hover {
+  color: #ffffff;
+  background: #dc2626;
+  border-color: #b91c1c;
+  transform: scale(1.08);
+}
+
+.doc-tab-close:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
 }
 
 .doc-tab-add {
@@ -1761,8 +1866,8 @@ select:focus-visible {
 }
 
 .doc-tab-add:hover {
-  color: var(--color-primary);
-  background: var(--color-primary-soft);
+  color: var(--color-primary-700);
+  background: var(--hover-primary-fill);
 }
 
 .doc-tab-add:focus-within {
@@ -1783,7 +1888,7 @@ select:focus-visible {
   cursor: pointer;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  transition: color 0.15s ease, border-color 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
   max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1793,6 +1898,7 @@ select:focus-visible {
 
 .doc-tab:hover {
   color: var(--color-navy);
+  background: var(--hover-surface);
 }
 
 .doc-tab.active {
@@ -1925,22 +2031,44 @@ select:focus-visible {
   top: 10px;
   right: 10px;
   z-index: 30;
-  padding: 6px 12px;
+  padding: 8px 14px;
   font-family: var(--font-heading);
-  font-size: 0.6875rem;
-  font-weight: 700;
+  font-size: 0.75rem;
+  font-weight: 800;
   text-transform: none;
-  letter-spacing: 0;
+  letter-spacing: 0.02em;
   color: var(--color-navy);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border-strong);
+  /* Reads clearly on white PDF canvas — not white-on-white */
+  background: var(--color-surface-muted);
+  border: 2px solid var(--color-navy);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.08),
+    0 4px 14px rgba(15, 23, 42, 0.12);
+}
+
+.doc-preview.mark-evidence-active .doc-preview-mark-toggle {
+  background: var(--hover-primary-fill);
+  border-color: var(--color-primary-700);
+  color: var(--color-primary-700);
+  box-shadow:
+    0 0 0 1px rgba(37, 99, 235, 0.2),
+    0 4px 14px rgba(37, 99, 235, 0.2);
 }
 
 .doc-preview-mark-toggle:hover {
-  background: #f1f5f9;
+  background: var(--hover-surface);
+  border-color: var(--color-navy);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.1),
+    0 6px 18px rgba(15, 23, 42, 0.16);
+}
+
+.doc-preview.mark-evidence-active .doc-preview-mark-toggle:hover {
+  background: var(--hover-primary-fill-strong);
+  border-color: #1e40af;
+  color: #1e3a8a;
 }
 
 /* PDF.js canvas (no iframe) — avoids native browser PDF hover chrome. */
@@ -2098,8 +2226,9 @@ select:focus-visible {
 }
 
 .btn-send:hover {
-  background: rgba(37, 99, 235, 0.16);
-  border-color: rgba(37, 99, 235, 0.35);
+  background: var(--hover-primary-fill-strong);
+  border-color: rgba(37, 99, 235, 0.5);
+  color: var(--color-primary-700);
   transform: translateY(-1px);
 }
 
@@ -2129,8 +2258,8 @@ select:focus-visible {
 }
 
 .submit-area .btn-success:not(:disabled):hover {
-  background: #15803d;
-  border-color: #166534;
+  background: #14532d;
+  border-color: #052e16;
 }
 
 /* ============== SUBMIT MODAL ============== */
@@ -2231,6 +2360,18 @@ select:focus-visible {
   color: var(--color-navy);
 }
 
+/* Native OS checkbox (Safari / Chrome) — check draws inside the control */
+.unsaved-leave-checkbox input[type='checkbox'] {
+  appearance: auto;
+  -webkit-appearance: auto;
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
 .unsaved-leave-actions {
   justify-content: flex-end;
   flex-wrap: wrap;
@@ -2258,8 +2399,8 @@ select:focus-visible {
 }
 
 .unsaved-leave-actions .btn-modal-cancel:hover {
-  background: var(--color-surface-muted);
-  border-color: #94a3b8;
+  background: var(--hover-surface);
+  border-color: var(--color-navy);
 }
 
 .btn-modal-cancel {
@@ -2269,7 +2410,8 @@ select:focus-visible {
 }
 
 .btn-modal-cancel:hover {
-  background: #cbd5e1;
+  background: var(--hover-surface-strong);
+  color: var(--color-navy);
 }
 
 .btn-modal-confirm {
@@ -2280,8 +2422,8 @@ select:focus-visible {
 }
 
 .btn-modal-confirm:hover {
-  background: #d97706;
-  box-shadow: 0 6px 16px rgba(245, 158, 11, 0.4);
+  background: #b45309;
+  box-shadow: 0 6px 16px rgba(245, 158, 11, 0.45);
 }
 
 .btn-modal-confirm:disabled {
@@ -2465,15 +2607,48 @@ select:focus-visible {
   cursor: pointer;
 }
 
-.link-label-group:hover .link-label-bg {
-  fill: var(--color-danger-700);
+.link-trash-scale {
+  /* Group origin is the declarant anchor (circle center); scale from there on hover */
+  transform-origin: 0 0;
+  transition: transform 0.18s ease;
 }
 
-.link-label-bg {
-  fill: var(--color-danger);
-  stroke: rgba(255, 255, 255, 0.4);
-  stroke-width: 1;
-  transition: fill 0.15s ease;
+/* Unlink chip: idle ≈ half “stale” (softer red ring + trash); hover = full red + white icon */
+.link-unlink-trash-svg {
+  color: #c94a4a;
+  pointer-events: none;
+  transition: color 0.12s ease;
+}
+
+.link-label-group:hover .link-trash-scale {
+  transform: scale(1.08);
+}
+
+.link-label-group:hover .link-unlink-chip-bg {
+  fill: #dc2626;
+  stroke: #b91c1c;
+}
+
+.link-label-group:hover .link-unlink-trash-svg {
+  color: #ffffff;
+}
+
+.link-unlink-chip-bg {
+  fill: #faf5f5;
+  stroke: #d96868;
+  stroke-width: 1.5;
+  transition:
+    fill 0.12s ease,
+    stroke 0.12s ease;
+}
+
+.link-label-group:active .link-unlink-chip-bg {
+  fill: #b91c1c;
+  stroke: #991b1b;
+}
+
+.link-label-group:active .link-unlink-trash-svg {
+  color: #ffffff;
 }
 
 /* ============== DRAG HANDLE ENHANCEMENTS ============== */
@@ -2494,29 +2669,33 @@ select:focus-visible {
 
 .drag-handle.dragging .drag-circle {
   border-color: var(--color-primary);
-  background: var(--color-primary);
+  background: #ffffff;
   box-shadow: 0 0 0 4px var(--color-primary-ring);
 }
 
 .drag-handle.has-link .drag-circle {
   border-color: var(--color-primary);
-  background: var(--color-primary);
+  background: rgba(255, 255, 255, 0.98);
 }
 
 .drag-circle {
-  width: 16px;
-  height: 16px;
-  border: 2.5px solid #64748b;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #64748b;
   border-radius: 50%;
-  transition: all 0.15s ease;
-  background: rgba(100, 116, 139, 0.12);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6) inset;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.2);
 }
 
 .drag-circle:hover {
-  border-color: var(--color-primary);
-  background: var(--color-primary-soft);
-  transform: scale(1.08);
+  border-color: var(--color-primary-700);
+  background: #ffffff;
+  transform: scale(1.06);
 }
 
 /* ============== DOCUMENT REGION MARKERS ============== */
@@ -2560,7 +2739,8 @@ select:focus-visible {
 }
 
 .region-marker-delete:hover {
-  background: #fef2f2;
+  background: #fecaca;
+  color: var(--color-danger-700);
 }
 
 .region-marker-resize {
@@ -2578,7 +2758,8 @@ select:focus-visible {
 }
 
 .region-marker-resize:hover {
-  background: #eff6ff;
+  background: #bfdbfe;
+  border-color: var(--color-primary-700);
 }
 
 .region-marker-handle {
@@ -2632,28 +2813,49 @@ select:focus-visible {
   cursor: ns-resize;
 }
 
+/* PDF highlight delete = same size + palette as declarant unlink chip (`.link-unlink-*`) */
 .region-marker-trash {
   position: absolute;
-  top: -12px;
-  right: -12px;
+  top: -9px;
+  right: -9px;
   z-index: 20;
-  width: 30px;
-  height: 30px;
+  width: 22px;
+  height: 22px;
   padding: 0;
-  border: 2px solid var(--color-white);
+  border: 1.5px solid #d96868;
   border-radius: 50%;
-  background: var(--color-danger);
-  color: var(--color-white);
+  background: #faf5f5;
+  color: #c94a4a;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 3px rgba(127, 29, 29, 0.18);
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease,
+    box-shadow 0.12s ease,
+    transform 0.12s ease;
 }
 
 .region-marker-trash:hover {
   background: #dc2626;
-  filter: brightness(1.05);
+  border-color: #b91c1c;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.38);
+  transform: scale(1.08);
+}
+
+.region-marker-trash:active {
+  background: #b91c1c;
+  border-color: #991b1b;
+  color: #ffffff;
+}
+
+.region-marker-trash .region-marker-trash-icon {
+  display: block;
+  flex-shrink: 0;
 }
 
 .region-marker-inner {
@@ -2663,39 +2865,41 @@ select:focus-visible {
   flex-shrink: 0;
   position: relative;
   z-index: 1;
-  /* Unlinked / idle: must read on white PDFs at any region size */
-  background: rgba(71, 85, 105, 0.14);
-  border: 3px solid rgba(71, 85, 105, 0.62);
+  /* Ring only — center stays clear (no inner dot) */
+  background: rgba(255, 255, 255, 0.55);
+  border: 2px solid rgba(71, 85, 105, 0.55);
   border-radius: 50%;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.55),
-    0 0 0 1px rgba(15, 23, 42, 0.1);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.65),
+    0 0 0 1px rgba(15, 23, 42, 0.06);
 }
 
 .region-marker:hover .region-marker-inner {
-  border-color: rgba(37, 99, 235, 0.9);
-  background: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.85);
+  background: rgba(255, 255, 255, 0.75);
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.6),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.8),
     0 0 0 4px var(--color-primary-soft);
 }
 
 .region-marker.selected .region-marker-inner {
   border-color: var(--color-primary);
-  border-width: 3px;
-  background: rgba(37, 99, 235, 0.1);
+  border-width: 2px;
+  background: rgba(255, 255, 255, 0.65);
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.5),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.75),
     0 0 0 4px var(--color-primary-ring);
 }
 
 .region-marker.linked .region-marker-inner,
 .inspection-region-marker.linked .region-marker-inner {
-  border-color: rgba(22, 163, 74, 0.98);
-  border-width: 3px;
-  background: var(--color-success-soft);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+  border-color: rgba(22, 163, 74, 0.95);
+  border-width: 2px;
+  background: rgba(240, 253, 244, 0.35);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.7),
+    0 0 0 1px rgba(22, 101, 52, 0.1);
 }
 
 .region-marker-label {
@@ -2767,7 +2971,7 @@ select:focus-visible {
 }
 
 .doc-hint-dismiss:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.38);
 }
 
 .doc-hint-dismiss:active {
@@ -2941,14 +3145,15 @@ select:focus-visible {
   text-align: center;
   border-bottom: 1px solid var(--color-border);
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
   vertical-align: middle;
   min-height: 4.75rem;
   box-sizing: border-box;
 }
 
+/* Darken the existing row tint on hover (not a flat gray replacement) */
 .matrix-cell:hover {
-  background: #f8fafc;
+  box-shadow: inset 0 0 0 9999px rgba(15, 23, 42, 0.1);
 }
 
 .matrix-cell-none {
@@ -3173,10 +3378,34 @@ label.btn-add-files {
   min-width: 0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  align-items: stretch;
+}
+
+.matrix-doc-tab-item {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: stretch;
+  flex-shrink: 0;
+  max-width: 168px;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.matrix-doc-tab-item:hover {
+  background: var(--hover-surface);
+}
+
+.matrix-doc-tab-item--active {
+  border-bottom-color: var(--color-primary);
+}
+
+.matrix-doc-tab-item--active .matrix-doc-tab {
+  color: var(--color-primary);
 }
 
 .matrix-doc-tab {
-  padding: 8px 10px;
+  padding: 8px 4px 8px 10px;
   background: transparent;
   border: none;
   font-family: var(--font-heading);
@@ -3184,22 +3413,62 @@ label.btn-add-files {
   font-weight: 600;
   color: var(--color-text-muted);
   cursor: pointer;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  flex-shrink: 0;
-  max-width: 150px;
+  margin-bottom: 0;
+  flex: 1;
+  min-width: 0;
+  max-width: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color 0.15s ease, background-color 0.15s ease;
 }
 
 .matrix-doc-tab:hover {
   color: var(--color-navy);
+  background: transparent;
 }
 
-.matrix-doc-tab.active {
+.matrix-doc-tab-item--active .matrix-doc-tab:hover {
   color: var(--color-primary);
-  border-bottom-color: var(--color-primary);
+}
+
+/* Match writer `.doc-tab-close` (lead / CEO matrix file tabs) */
+.matrix-doc-tab-close {
+  flex-shrink: 0;
+  align-self: center;
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  padding: 0;
+  margin: 0 6px 0 2px;
+  border: 1px solid #e2e8f0;
+  background: #f1f5f9;
+  color: #1e293b;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    color 0.12s ease,
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    transform 0.12s ease;
+}
+
+.matrix-doc-tab-close:hover {
+  color: #ffffff;
+  background: #dc2626;
+  border-color: #b91c1c;
+  transform: scale(1.08);
+}
+
+.matrix-doc-tab-close:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
 }
 
 .matrix-doc-tab-add {
@@ -3220,8 +3489,8 @@ label.btn-add-files {
 }
 
 .matrix-doc-tab-add:hover {
-  color: var(--color-primary);
-  background: var(--color-primary-soft);
+  color: var(--color-primary-700);
+  background: var(--hover-primary-fill);
 }
 
 .matrix-doc-tab-add:focus-within {
@@ -3348,8 +3617,8 @@ label.btn-add-files {
 }
 
 .matrix-actions .btn-danger:not(:disabled):hover {
-  background: #b91c1c;
-  border-color: #991b1b;
+  background: #991b1b;
+  border-color: #7f1d1d;
 }
 
 .matrix-actions .btn-success:not(:disabled) {
@@ -3360,8 +3629,8 @@ label.btn-add-files {
 }
 
 .matrix-actions .btn-success:not(:disabled):hover {
-  background: #15803d;
-  border-color: #166534;
+  background: #14532d;
+  border-color: #052e16;
 }
 
 /* ============== INSPECTION MODAL ============== */
@@ -3409,7 +3678,7 @@ label.btn-add-files {
 }
 
 .inspection-close:hover {
-  background: #f1f5f9;
+  background: var(--hover-surface);
   color: var(--color-navy);
 }
 
@@ -3439,7 +3708,52 @@ label.btn-add-files {
 }
 
 .inspection-conflict-clear:hover {
-  background: #fef2f2 !important;
+  background: #fecaca !important;
+  color: var(--color-danger-700) !important;
+}
+
+/* Solid CTAs in this modal (match matrix / submit actions, not soft tint buttons) */
+.inspection-modal .inspection-field-row .btn-primary {
+  background: var(--color-primary);
+  color: var(--color-white);
+  border: 1px solid var(--color-primary-700);
+  font-weight: 700;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.inspection-modal .inspection-field-row .btn-primary:hover {
+  background: var(--color-primary-700);
+  border-color: #1e40af;
+  color: var(--color-white);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+}
+
+.inspection-modal .inspection-conflict-row .btn-danger {
+  background: #dc2626;
+  color: var(--color-white);
+  border: 1px solid var(--color-danger-700);
+  font-weight: 700;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.inspection-modal .inspection-conflict-row .btn-danger:hover {
+  background: var(--color-danger-700);
+  border-color: #7f1d1d;
+  color: var(--color-white);
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.35);
+}
+
+.inspection-modal .inspection-conflict-row .btn-outline.inspection-conflict-clear {
+  background: var(--color-white);
+  color: var(--color-danger-700);
+  border: 2px solid var(--color-danger);
+  font-weight: 700;
+}
+
+.inspection-modal .inspection-conflict-row .btn-outline.inspection-conflict-clear:hover {
+  background: #fecaca !important;
+  color: #7f1d1d !important;
+  border-color: var(--color-danger-700) !important;
 }
 
 .inspection-input {
@@ -3516,27 +3830,28 @@ label.btn-add-files {
 }
 
 .inspection-evidence-status--linked {
-  border-color: var(--color-success);
-  color: #166534;
-  background: #f0fdf4;
+  border-color: #15803d;
+  color: var(--color-white);
+  background: #16a34a;
 }
 
 .inspection-evidence-status--not-linked {
-  border-color: var(--color-warning);
-  color: #92400e;
-  background: #fffbeb;
+  /* Muted “stale” peach — low chroma, not saturated traffic orange */
+  border-color: #e8d4bf;
+  color: #7c4a21;
+  background: #fdf0dd;
 }
 
 .inspection-evidence-status--cross-column {
-  border-color: #ca8a04;
-  color: #854d0e;
-  background: #fef9c3;
+  border-color: #92400e;
+  color: var(--color-white);
+  background: #b45309;
 }
 
 .inspection-evidence-status--no-value {
-  border-color: var(--color-border);
-  color: var(--color-text-muted);
-  background: #f8fafc;
+  border-color: #475569;
+  color: var(--color-white);
+  background: #64748b;
 }
 
 .inspection-preview {
@@ -3714,8 +4029,8 @@ label.btn-add-files {
 }
 
 .return-modal-actions .btn-danger:hover {
-  background: #b91c1c;
-  border-color: #991b1b;
+  background: #991b1b;
+  border-color: #7f1d1d;
 }
 
 /* ============== ENHANCED EMPTY STATES ============== */
@@ -4052,12 +4367,13 @@ label.btn-add-files {
 /* ============== USER AVATAR HOVER ============== */
 
 .user-avatar {
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
 
 .user-avatar:hover {
   transform: scale(1.05);
-  box-shadow: 0 2px 8px rgba(30, 45, 64, 0.2);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.28);
+  filter: brightness(0.86);
 }
 
 /* ============== CARD LIFT ENHANCEMENT ============== */
@@ -4069,20 +4385,22 @@ label.btn-add-files {
 .case-card:hover {
   transform: translateY(-4px);
   box-shadow: var(--shadow-lg);
-  border-color: var(--color-primary);
+  border-color: var(--color-primary-700);
+  background: var(--hover-surface);
 }
 
 .matrix-status-summary,
 .matrix-files-preview,
 .matrix-comments-box {
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
 .matrix-status-summary:hover,
 .matrix-files-preview:hover,
 .matrix-comments-box:hover {
   transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-md), 0 0 0 1px rgba(29, 78, 216, 0.2);
+  border-color: var(--color-primary-700);
 }
 
 /* ============== NOTIFICATION ANIMATION ============== */
@@ -4122,8 +4440,8 @@ label.btn-add-files {
 }
 
 .upload-zone:hover {
-  border-color: var(--color-primary);
-  background-color: rgba(37, 99, 235, 0.02);
+  border-color: var(--color-primary-700);
+  background-color: var(--hover-primary-fill);
 }
 
 /* ============== INSPECTOR CLOSE BUTTON ============== */
@@ -4133,8 +4451,8 @@ label.btn-add-files {
 }
 
 .inspection-close:hover {
-  background: #fef2f2;
-  color: var(--color-danger);
+  background: #fecaca;
+  color: var(--color-danger-700);
 }
 
 /* ============== WRITER DASHBOARD - TWO COLUMN LAYOUT ============== */
@@ -4293,7 +4611,8 @@ label.btn-add-files {
 }
 
 .writer-completed-toggle:hover {
-  background: var(--color-border);
+  background: var(--hover-surface-strong);
+  border-color: #94a3b8;
 }
 
 .writer-completed-chevron {
@@ -4321,7 +4640,7 @@ label.btn-add-files {
 }
 
 .writer-case-row:hover {
-  background: #f8fafc;
+  background: var(--hover-surface);
 }
 
 .writer-case-icon {
@@ -4419,8 +4738,8 @@ label.btn-add-files {
 }
 
 .writer-drop-zone:hover {
-  border-color: var(--color-primary);
-  background: rgba(37, 99, 235, 0.03);
+  border-color: var(--color-primary-700);
+  background: var(--hover-primary-fill);
 }
 
 .writer-drop-zone-icon {
@@ -4511,6 +4830,7 @@ label.btn-add-files {
 .writer-activity-filter-btn:hover {
   border-color: var(--color-navy);
   color: var(--color-navy);
+  background: var(--hover-surface);
 }
 
 .writer-activity-filter-btn.active {
@@ -4537,7 +4857,7 @@ label.btn-add-files {
 }
 
 .writer-activity-item:hover {
-  background: #f8fafc;
+  background: var(--hover-surface);
 }
 
 .writer-activity-info {
@@ -4599,8 +4919,9 @@ label.btn-add-files {
 }
 
 .writer-big-create-btn:hover {
-  background: rgba(37, 99, 235, 0.16);
-  border-color: rgba(37, 99, 235, 0.35);
+  background: var(--hover-primary-fill-strong);
+  border-color: rgba(37, 99, 235, 0.5);
+  color: var(--color-primary-700);
   transform: translateY(-1px);
 }
 
@@ -4698,7 +5019,9 @@ label.btn-add-files {
 }
 
 .btn-kanban-filter:hover {
-  background: var(--color-surface-muted);
+  background: var(--hover-surface);
+  border-color: var(--color-navy);
+  color: var(--color-navy);
 }
 
 .btn-kanban-filter:focus-visible {
@@ -4739,7 +5062,8 @@ label.btn-add-files {
 }
 
 .kanban-filter-option:hover {
-  background: #f1f5f9;
+  background: var(--hover-surface);
+  color: var(--color-navy);
 }
 
 .kanban-filter-option--active {
@@ -4770,7 +5094,7 @@ label.btn-add-files {
 }
 
 .kanban-filter-checkbox-row:hover {
-  background: #f1f5f9;
+  background: var(--hover-surface);
 }
 
 .kanban-filter-checkbox-row input[type="checkbox"] {
@@ -4872,11 +5196,13 @@ label.btn-add-files {
   padding: 12px 14px;
   cursor: pointer;
   box-shadow: var(--shadow-sm);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease,
+    background-color 0.15s ease;
 }
 
 .kanban-card:hover {
-  border-color: var(--color-primary);
+  border-color: var(--color-primary-700);
+  background: var(--hover-surface);
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
 }
@@ -4991,8 +5317,8 @@ label.btn-add-files {
 }
 
 .kanban-submitted-btn:hover {
-  background: rgba(34, 197, 94, 0.18);
-  border-color: rgba(34, 197, 94, 0.4);
+  background: rgba(34, 197, 94, 0.28);
+  border-color: rgba(22, 163, 74, 0.55);
   transform: translateY(-1px);
 }
 
@@ -5020,11 +5346,12 @@ label.btn-add-files {
   border: 1px solid var(--color-border);
   border-radius: 6px;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .kanban-history-item:hover {
-  background: #f1f5f9;
+  background: var(--hover-surface);
+  border-color: #64748b;
 }
 
 .kanban-history-item svg:first-child {
