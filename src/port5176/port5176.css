@@ -3255,8 +3255,8 @@ select:focus-visible {
 }
 
 .matrix-main {
-  padding: 24px 32px;
-  height: calc(80vh - 80px);
+  padding: 14px 16px;
+  height: calc(88vh - 80px);
   flex: 1;
   min-height: 0;
   box-sizing: border-box;
@@ -3277,10 +3277,229 @@ select:focus-visible {
   box-sizing: border-box;
 }
 
+/* ===== Review matrix: PDF-primary split (A2) ===== */
+.matrix-split-tabs {
+  display: none;
+  gap: 8px;
+  padding: 0 0 10px;
+}
+
+.matrix-split-tab {
+  appearance: none;
+  border: 1px solid rgba(100, 116, 139, 0.25);
+  background: var(--color-surface-muted);
+  color: #334155;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 0.8125rem;
+  padding: 8px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.matrix-split-tab--active {
+  background: var(--color-primary-soft);
+  border-color: rgba(37, 99, 235, 0.25);
+  color: #1e40af;
+}
+
+.matrix-layout--pdf-split {
+  display: grid;
+  grid-template-columns: minmax(300px, var(--matrixPdfPct, 38%)) 14px minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.matrix-pdf-pane {
+  min-width: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.matrix-pdf-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-border);
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+}
+
+.matrix-pdf-toolbar-title {
+  font-family: var(--font-heading);
+  font-size: 0.8125rem;
+  font-weight: 800;
+  color: var(--color-text-muted);
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.matrix-pdf-toolbar-docname {
+  margin-left: 10px;
+  font-family: var(--font-heading);
+  font-size: 0.875rem;
+  font-weight: 800;
+  color: var(--color-navy);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: min(360px, 36vw);
+  display: inline-block;
+  vertical-align: bottom;
+}
+
+.matrix-pdf-add-files {
+  height: 34px;
+  padding: 0 14px;
+}
+
+.matrix-pdf-tabs-row {
+  padding: 10px 12px 0;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.matrix-pdf-empty {
+  display: block;
+  padding: 10px 2px 12px;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.matrix-pdf-view {
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 12px;
+  background: var(--color-bg);
+  overflow: auto;
+}
+
+.matrix-pdf-shell {
+  height: 100%;
+  min-height: 520px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-white);
+  overflow: hidden;
+}
+
+.matrix-pdf-js {
+  height: 100%;
+}
+
+.matrix-pdf-image-wrap {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+}
+
+.matrix-pdf-img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.matrix-pdf-placeholder {
+  height: 100%;
+  min-height: 520px;
+  border: 2px dashed rgba(148, 163, 184, 0.8);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  text-align: center;
+}
+
+.matrix-split-divider {
+  width: 14px;
+  cursor: col-resize;
+  position: relative;
+  margin: 0;
+  border-radius: 999px;
+}
+
+.matrix-split-divider::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 10px;
+  bottom: 10px;
+  width: 4px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.25);
+}
+
+.matrix-split-divider:hover::before {
+  background: rgba(37, 99, 235, 0.35);
+}
+
+.matrix-split-divider:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.matrix-review-pane {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  gap: 16px;
+  height: 100%;
+}
+
+@media (max-width: 980px) {
+  .matrix-split-tabs {
+    display: flex;
+  }
+
+  .matrix-layout--pdf-split {
+    flex-direction: column;
+  }
+
+  .matrix-split-divider {
+    display: none;
+  }
+
+  .matrix-pdf-pane,
+  .matrix-review-pane {
+    width: 100% !important;
+  }
+
+  .matrix-layout--show-pdf .matrix-review-pane {
+    display: none;
+  }
+
+  .matrix-layout--show-review .matrix-pdf-pane {
+    display: none;
+  }
+
+  .matrix-review-pane {
+    grid-template-columns: 1fr;
+  }
+}
+
 .matrix-panel {
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
-  padding: 16px 20px;
+  padding: 6px 8px;
   overflow: hidden;
   min-width: 0;
   min-height: 0;
@@ -3293,14 +3512,27 @@ select:focus-visible {
   min-height: 0;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
+  display: flex;
+  align-items: stretch;
+  padding-bottom: 14px;
 }
 
 .matrix-table {
-  width: 100%;
+  width: max-content;
+  margin: 0;
   border-collapse: collapse;
   font-family: var(--font-body);
   table-layout: fixed;
   min-height: 100%;
+  height: 100%;
+}
+
+.matrix-table-center {
+  width: max-content;
+  margin: 0 auto;
+  min-height: 100%;
+  display: flex;
+  align-items: stretch;
 }
 
 .matrix-table.matrix-table--scroll-cols {
@@ -3356,29 +3588,29 @@ select:focus-visible {
 }
 
 .matrix-row-header {
-  padding: 22px 16px;
+  padding: 14px 12px;
   font-family: var(--font-heading);
-  font-size: 1rem;
+  font-size: 0.9375rem;
   font-weight: 600;
   color: var(--color-navy);
   text-align: left;
   border-bottom: 1px solid var(--color-border);
   vertical-align: middle;
   width: 24%;
-  min-width: 168px;
+  min-width: 150px;
   line-height: 1.4;
-  min-height: 4.75rem;
+  min-height: 3.5rem;
   box-sizing: border-box;
 }
 
 .matrix-cell {
-  padding: 22px 16px;
+  padding: 14px 12px;
   text-align: center;
   border-bottom: 1px solid var(--color-border);
   cursor: pointer;
   transition: background-color 0.15s ease, box-shadow 0.15s ease;
   vertical-align: middle;
-  min-height: 4.75rem;
+  min-height: 3.5rem;
   box-sizing: border-box;
 }
 
@@ -3424,11 +3656,11 @@ select:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   font-weight: 700;
-  font-size: 1.0625rem;
+  font-size: 0.95rem;
 }
 
 .matrix-icon-none {
@@ -3476,6 +3708,8 @@ select:focus-visible {
   border: 2px solid var(--color-navy);
   border-radius: var(--radius-md);
   padding: 16px;
+  box-sizing: border-box;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   gap: 12px;

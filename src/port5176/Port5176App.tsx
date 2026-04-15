@@ -4927,6 +4927,7 @@ function ReviewMatrixPage({
   const [returnComment, setReturnComment] = useState('');
   const [newCommentText, setNewCommentText] = useState('');
   const [editingFieldValue, setEditingFieldValue] = useState('');
+  const matrixSplitRef = useRef<HTMLDivElement>(null);
   const inspectionPreviewRef = useRef<HTMLDivElement>(null);
   const inspectionPdfLayoutRef = useRef<PdfPageLayoutInfo | null>(null);
   const [inspectionPdfLayout, setInspectionPdfLayout] = useState<PdfPageLayoutInfo | null>(null);
@@ -4940,6 +4941,12 @@ function ReviewMatrixPage({
   const matrixDirtyRef = useRef(false);
   const matrixPendingLeaveRef = useRef<'return' | 'back' | null>(null);
   const [matrixSidebarDocId, setMatrixSidebarDocId] = useState<string | null>(null);
+  const [matrixSplitPct, setMatrixSplitPct] = useState<number>(() => {
+    const raw = window.localStorage.getItem('port5176.review.splitPct');
+    const n = raw ? Number(raw) : NaN;
+    return Number.isFinite(n) ? Math.min(65, Math.max(25, n)) : 38;
+  });
+  const [matrixMobileTab, setMatrixMobileTab] = useState<'pdf' | 'review'>('review');
   const [matrixAttachmentDeletePrompt, setMatrixAttachmentDeletePrompt] = useState<{
     docId: string;
     name: string;
@@ -5228,6 +5235,10 @@ function ReviewMatrixPage({
     ? countMatrixCells(currentCase, 'stale', matrixLiveFieldOverrides, matrixColumnDocIds)
     : 0;
   const matrixManyCols = matrixDocs.length > 8;
+  // Compact matrix: avoid huge horizontal "slabs" for simple 1–2 doc cases.
+  const matrixCompactRowHeaderW = 150;
+  const matrixCompactDocColW =
+    matrixDocs.length <= 1 ? 220 : matrixDocs.length === 2 ? 180 : 160;
   const matrixScrollMinWidth =
     matrixManyCols && matrixDocs.length > 0 ? 172 + matrixDocs.length * 122 : undefined;
 
@@ -5236,7 +5247,45 @@ function ReviewMatrixPage({
     const v = matrixPendingFields[field] ?? currentCase.fields[field] ?? '';
     setEditingFieldValue(v);
     setInspectingCell({ field, docId });
+    const merged = mergePendingMatrixFields(currentCase, matrixPendingFields);
+    const ev = resolveEvidenceForInspection(merged, field, docId);
+    if (ev?.doc?.id) {
+      setMatrixSidebarDocId(ev.doc.id);
+      setMatrixMobileTab('pdf');
+    } else {
+      setMatrixMobileTab('review');
+    }
   };
+
+  const onMatrixSplitPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const root = matrixSplitRef.current;
+    if (!root) return;
+    e.preventDefault();
+    const target = e.currentTarget;
+    target.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const startPct = matrixSplitPct;
+    const totalW = root.getBoundingClientRect().width;
+    const onMove = (ev: PointerEvent) => {
+      const pctDelta = ((ev.clientX - startX) / totalW) * 100;
+      const next = Math.min(65, Math.max(25, startPct + pctDelta));
+      setMatrixSplitPct(next);
+    };
+    const onUp = () => {
+      target.removeEventListener('pointermove', onMove);
+      target.removeEventListener('pointerup', onUp);
+      target.removeEventListener('lostpointercapture', onUp);
+    };
+    target.addEventListener('pointermove', onMove);
+    target.addEventListener('pointerup', onUp);
+    target.addEventListener('lostpointercapture', onUp);
+  }, [matrixSplitPct]);
+
+  useEffect(() => {
+    window.localStorage.setItem('port5176.review.splitPct', String(matrixSplitPct));
+  }, [matrixSplitPct]);
+
+  const activePdfDoc = currentCase?.docs.find(d => d.id === matrixSidebarDocId) ?? null;
 
   const handleAddComment = (text: string) => {
     if (matrixReadOnly) return;
@@ -5584,24 +5633,196 @@ function ReviewMatrixPage({
         )}
 
         <main className="matrix-main">
-          <div className="matrix-layout">
-            {/* LEFT: Matrix Table */}
-            <div className="matrix-panel">
-              <div className="matrix-table-wrap">
-                <table
-                  className={`matrix-table${matrixManyCols ? ' matrix-table--scroll-cols' : ''}`}
-                  style={matrixScrollMinWidth ? { minWidth: matrixScrollMinWidth } : undefined}
-                >
+          <div className="matrix-split-tabs" role="tablist" aria-label="Review layout">
+            <button
+              type="button"
+              role="tab"
+              id="matrix-tab-review"
+              aria-controls="matrix-panel-review"
+              aria-selected={matrixMobileTab === 'review'}
+              className={`matrix-split-tab${matrixMobileTab === 'review' ? ' matrix-split-tab--active' : ''}`}
+              onClick={() => setMatrixMobileTab('review')}
+            >
+              Matrix
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="matrix-tab-pdf"
+              aria-controls="matrix-panel-pdf"
+              aria-selected={matrixMobileTab === 'pdf'}
+              className={`matrix-split-tab${matrixMobileTab === 'pdf' ? ' matrix-split-tab--active' : ''}`}
+              onClick={() => setMatrixMobileTab('pdf')}
+            >
+              PDF
+            </button>
+          </div>
+
+          <div
+            className={`matrix-layout matrix-layout--pdf-split ${matrixMobileTab === 'pdf' ? 'matrix-layout--show-pdf' : 'matrix-layout--show-review'}`}
+            ref={matrixSplitRef}
+            style={{ ['--matrixPdfPct' as unknown as string]: `${matrixSplitPct}%` } as React.CSSProperties}
+          >
+            <section
+              id="matrix-panel-pdf"
+              role="tabpanel"
+              aria-labelledby="matrix-tab-pdf"
+              aria-label="PDF viewer"
+              className="matrix-pdf-pane"
+            >
+              <div className="matrix-pdf-toolbar">
+                <div className="matrix-pdf-toolbar-left">
+                  <span className="matrix-pdf-toolbar-title">Document</span>
+                  {currentCase.docs.length > 0 && (
+                    <span className="matrix-pdf-toolbar-docname" title={activePdfDoc?.name ?? undefined}>
+                      {activePdfDoc?.name}
+                    </span>
+                  )}
+                </div>
+                <div className="matrix-pdf-toolbar-right">
+                  <label
+                    className={`btn btn-primary btn-sm matrix-pdf-add-files${matrixReadOnly ? ' matrix-control-disabled' : ''}`}
+                    title={
+                      matrixReadOnly
+                        ? 'Read-only: submitted to customs'
+                        : `Add files (max ${MAX_DOCUMENTS_PER_CASE} per case)`
+                    }
+                    aria-disabled={matrixReadOnly}
+                  >
+                    + Add files
+                    <input
+                      type="file"
+                      multiple
+                      accept=".pdf,.png,.jpg,.jpeg"
+                      disabled={matrixReadOnly}
+                      onChange={handleMatrixFileUpload}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="matrix-pdf-tabs-row" aria-label="Case attachments">
+                {currentCase.docs.length === 0 ? (
+                  <span className="matrix-pdf-empty">No files attached.</span>
+                ) : (
+                  <>
+                    <div className="matrix-doc-tabs">
+                      {currentCase.docs.map(doc => (
+                        <div
+                          key={doc.id}
+                          className={`matrix-doc-tab-item${matrixSidebarDocId === doc.id ? ' matrix-doc-tab-item--active' : ''}`}
+                          role="none"
+                        >
+                          <button
+                            type="button"
+                            aria-current={matrixSidebarDocId === doc.id ? 'true' : undefined}
+                            className="matrix-doc-tab"
+                            onClick={() => {
+                              setMatrixSidebarDocId(doc.id);
+                              setMatrixMobileTab('pdf');
+                            }}
+                            title={doc.name}
+                          >
+                            {truncateTabLabel(doc.name, 18)}
+                          </button>
+                          {!matrixReadOnly && (
+                            <button
+                              type="button"
+                              className="matrix-doc-tab-close"
+                              aria-label={`Remove ${doc.name}`}
+                              title="Remove file"
+                              onClick={e => {
+                                e.stopPropagation();
+                                requestMatrixRemoveDocument(doc.id);
+                              }}
+                            >
+                              <span aria-hidden>×</span>
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="matrix-pdf-view">
+                {(() => {
+                  const doc = activePdfDoc;
+                  if (!doc) {
+                    return (
+                      <div className="matrix-pdf-placeholder">
+                        <p className="subtitle">Select a linked cell to jump to its document, or add an attachment.</p>
+                      </div>
+                    );
+                  }
+                  const isPdf = doc.dataUrl.startsWith('data:application/pdf');
+                  return (
+                    <div className="matrix-pdf-shell">
+                      {isPdf ? (
+                        <PdfJsPreview
+                          dataUrl={doc.dataUrl}
+                          className="matrix-pdf-js"
+                          fitMode="fitWidth"
+                        />
+                      ) : (
+                        <div className="matrix-pdf-image-wrap">
+                          <img src={doc.dataUrl} alt="" className="matrix-pdf-img" />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            </section>
+
+            <div
+              className="matrix-split-divider"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize PDF pane"
+              aria-valuenow={Math.round(matrixSplitPct)}
+              aria-valuemin={25}
+              aria-valuemax={65}
+              onPointerDown={onMatrixSplitPointerDown}
+              onKeyDown={(e) => {
+                const step = e.shiftKey ? 5 : 1;
+                if (e.key === 'ArrowLeft') {
+                  e.preventDefault();
+                  setMatrixSplitPct(p => Math.max(25, p - step));
+                } else if (e.key === 'ArrowRight') {
+                  e.preventDefault();
+                  setMatrixSplitPct(p => Math.min(65, p + step));
+                }
+              }}
+              tabIndex={0}
+            />
+
+            <div
+              id="matrix-panel-review"
+              role="tabpanel"
+              aria-labelledby="matrix-tab-review"
+              className="matrix-review-pane"
+            >
+              {/* LEFT: Matrix Table */}
+              <div className="matrix-panel">
+                <div className="matrix-table-wrap">
+                  <div className="matrix-table-center">
+                    <table
+                      className={`matrix-table${matrixManyCols ? ' matrix-table--scroll-cols' : ''}`}
+                      style={matrixScrollMinWidth ? { minWidth: matrixScrollMinWidth } : undefined}
+                    >
                   <colgroup>
                     <col
                       style={
                         matrixManyCols
                           ? { width: 172, minWidth: 172 }
-                          : { width: '24%' }
+                          : { width: matrixCompactRowHeaderW, minWidth: matrixCompactRowHeaderW }
                       }
                     />
                     {matrixDocs.length === 0 ? (
-                      <col style={{ width: matrixManyCols ? 320 : '76%' }} />
+                      <col style={{ width: matrixManyCols ? 320 : matrixCompactDocColW, minWidth: matrixCompactDocColW }} />
                     ) : (
                       matrixDocs.map(doc => (
                         <col
@@ -5609,7 +5830,7 @@ function ReviewMatrixPage({
                           style={
                             matrixManyCols
                               ? { width: 122, minWidth: 122 }
-                              : { width: `${76 / matrixDocs.length}%` }
+                              : { width: matrixCompactDocColW, minWidth: matrixCompactDocColW }
                           }
                         />
                       ))
@@ -5679,150 +5900,29 @@ function ReviewMatrixPage({
                     ))}
                   </tbody>
                 </table>
-              </div>
-            </div>
-
-            {/* RIGHT: Sidebar */}
-            <div className="matrix-sidebar">
-              <div className="matrix-status-summary">
-                <div className="status-stat">
-                  <span className="status-stat-icon status-stat-linked">✓</span>
-                  <span className="status-stat-label">Linked</span>
-                  <span className="status-stat-value">{linkedCount}</span>
-                </div>
-                <div className="status-stat">
-                  <span className="status-stat-icon status-stat-conflict">!</span>
-                  <span className="status-stat-label">Conflict</span>
-                  <span className="status-stat-value">{conflictCount}</span>
-                </div>
-                <div className="status-stat">
-                  <span className="status-stat-icon status-stat-stale">⟳</span>
-                  <span className="status-stat-label">Stale</span>
-                  <span className="status-stat-value">{staleCount}</span>
+                  </div>
                 </div>
               </div>
 
-              <label
-                className={`btn btn-primary btn-add-files${matrixReadOnly ? ' matrix-control-disabled' : ''}`}
-                title={
-                  matrixReadOnly
-                    ? 'Read-only: submitted to customs'
-                    : `Add files (max ${MAX_DOCUMENTS_PER_CASE} per case)`
-                }
-                aria-disabled={matrixReadOnly}
-              >
-                + Add Files
-                <input
-                  type="file"
-                  multiple
-                  accept=".pdf,.png,.jpg,.jpeg"
-                  disabled={matrixReadOnly}
-                  onChange={handleMatrixFileUpload}
-                  style={{ display: 'none' }}
-                />
-              </label>
-
-              <div className="matrix-files-preview">
-                <div className="matrix-files-preview-header">
-                  <span className="matrix-files-preview-title">Attached files</span>
-                  <span className="matrix-files-preview-count">{currentCase.docs.length}</span>
+              {/* RIGHT: Sidebar */}
+              <div className="matrix-sidebar">
+                <div className="matrix-status-summary">
+                  <div className="status-stat">
+                    <span className="status-stat-icon status-stat-linked">✓</span>
+                    <span className="status-stat-label">Linked</span>
+                    <span className="status-stat-value">{linkedCount}</span>
+                  </div>
+                  <div className="status-stat">
+                    <span className="status-stat-icon status-stat-conflict">!</span>
+                    <span className="status-stat-label">Conflict</span>
+                    <span className="status-stat-value">{conflictCount}</span>
+                  </div>
+                  <div className="status-stat">
+                    <span className="status-stat-icon status-stat-stale">⟳</span>
+                    <span className="status-stat-label">Stale</span>
+                    <span className="status-stat-value">{staleCount}</span>
+                  </div>
                 </div>
-                {currentCase.docs.length === 0 ? (
-                  <p className="matrix-files-preview-empty">No files attached.</p>
-                ) : (
-                  <>
-                    <div className="matrix-doc-tabs-row">
-                      <div className="matrix-doc-tabs-strip">
-                        <div className="matrix-doc-tabs" role="tablist" aria-label="Case attachments">
-                          {currentCase.docs.map(doc => (
-                            <div
-                              key={doc.id}
-                              className={`matrix-doc-tab-item${matrixSidebarDocId === doc.id ? ' matrix-doc-tab-item--active' : ''}`}
-                              role="none"
-                            >
-                              <button
-                                type="button"
-                                role="tab"
-                                aria-selected={matrixSidebarDocId === doc.id}
-                                className="matrix-doc-tab"
-                                onClick={() => setMatrixSidebarDocId(doc.id)}
-                                title={doc.name}
-                              >
-                                {truncateTabLabel(doc.name, 18)}
-                              </button>
-                              {!matrixReadOnly && (
-                                <button
-                                  type="button"
-                                  className="matrix-doc-tab-close"
-                                  aria-label={`Remove ${doc.name}`}
-                                  title="Remove file"
-                                  onClick={e => {
-                                    e.stopPropagation();
-                                    requestMatrixRemoveDocument(doc.id);
-                                  }}
-                                >
-                                  <span aria-hidden>×</span>
-                                </button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                        <label
-                          className={`matrix-doc-tab-add${matrixReadOnly ? ' matrix-control-disabled' : ''}`}
-                          title={
-                            matrixReadOnly
-                              ? 'Read-only: submitted to customs'
-                              : `Add files (max ${MAX_DOCUMENTS_PER_CASE} per case)`
-                          }
-                          aria-label="Add files"
-                          aria-disabled={matrixReadOnly}
-                        >
-                          <input
-                            type="file"
-                            multiple
-                            accept=".pdf,.png,.jpg,.jpeg"
-                            disabled={matrixReadOnly}
-                            onChange={handleMatrixFileUpload}
-                            style={{ display: 'none' }}
-                          />
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" aria-hidden>
-                            <line x1="12" y1="5" x2="12" y2="19"></line>
-                            <line x1="5" y1="12" x2="19" y2="12"></line>
-                          </svg>
-                        </label>
-                      </div>
-                    </div>
-                    <div className="matrix-files-preview-pane">
-                      {(() => {
-                        const doc = currentCase.docs.find(d => d.id === matrixSidebarDocId);
-                        if (!doc) return null;
-                        const isPdf = doc.dataUrl.startsWith('data:application/pdf');
-                        return (
-                          <div className="matrix-files-preview-pane-inner">
-                            <p className="matrix-preview-active-name" title={doc.name}>
-                              {doc.name}
-                            </p>
-                            <div className="matrix-single-preview-shell">
-                              {isPdf ? (
-                                <PdfJsPreview
-                                  dataUrl={doc.dataUrl}
-                                  className="matrix-sidebar-pdf-js"
-                                  fitMode="fitWidth"
-                                />
-                              ) : (
-                                <div className="matrix-single-preview-image-wrap">
-                                  <img src={doc.dataUrl} alt="" className="matrix-sidebar-doc-img" />
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  </>
-                )}
-              </div>
-
               <div className="matrix-sidebar-bottom">
                 <div className="matrix-comments-box">
                   <div className="comments-header">
@@ -5909,6 +6009,7 @@ function ReviewMatrixPage({
                     </button>
                   </div>
                 </div>
+              </div>
               </div>
             </div>
           </div>
