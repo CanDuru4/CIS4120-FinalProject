@@ -1838,9 +1838,9 @@ select:focus-visible {
 }
 
 .doc-tab-close:hover {
-  color: #ffffff;
-  background: #dc2626;
-  border-color: #b91c1c;
+  color: #991b1b;
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.35);
   transform: scale(1.08);
 }
 
@@ -2253,15 +2253,15 @@ select:focus-visible {
 
 /* Writer case editor: Submit Case — same solid treatment as matrix primary actions */
 .submit-area .btn-success:not(:disabled) {
-  background: #16a34a;
-  color: #ffffff;
-  border: 1px solid #15803d;
+  background: var(--color-success-soft);
+  color: #166534;
+  border: 1px solid rgba(34, 197, 94, 0.25);
   font-weight: 700;
 }
 
 .submit-area .btn-success:not(:disabled):hover {
-  background: #14532d;
-  border-color: #052e16;
+  background: rgba(34, 197, 94, 0.28);
+  border-color: rgba(22, 163, 74, 0.45);
 }
 
 /* ============== SUBMIT MODAL ============== */
@@ -3019,17 +3019,17 @@ select:focus-visible {
 }
 
 .region-marker-trash:hover {
-  background: #dc2626;
-  border-color: #b91c1c;
-  color: #ffffff;
-  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.38);
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.42);
+  color: #991b1b;
+  box-shadow: 0 2px 6px rgba(127, 29, 29, 0.18);
   transform: scale(1.08);
 }
 
 .region-marker-trash:active {
-  background: #b91c1c;
-  border-color: #991b1b;
-  color: #ffffff;
+  background: rgba(239, 68, 68, 0.32);
+  border-color: rgba(220, 38, 38, 0.55);
+  color: #7f1d1d;
 }
 
 .region-marker-trash .region-marker-trash-icon {
@@ -3417,7 +3417,7 @@ select:focus-visible {
 }
 
 .matrix-cell-stale {
-  background: rgba(245, 158, 11, 0.18);
+  background: var(--color-warning-soft);
 }
 
 .matrix-icon {
@@ -3437,13 +3437,15 @@ select:focus-visible {
 }
 
 .matrix-icon-linked {
-  background: var(--color-success);
-  color: var(--color-white);
+  background: var(--color-success-soft);
+  color: #166534;
+  border: 1px solid rgba(34, 197, 94, 0.25);
 }
 
 .matrix-icon-conflict {
-  background: var(--color-danger);
-  color: var(--color-white);
+  background: var(--color-danger-soft);
+  color: #991b1b;
+  border: 1px solid rgba(239, 68, 68, 0.25);
 }
 
 .matrix-icon-orange {
@@ -3452,8 +3454,9 @@ select:focus-visible {
 }
 
 .matrix-icon-stale {
-  background: #ca8a04;
-  color: var(--color-white);
+  background: var(--color-warning-soft);
+  color: #92400e;
+  border: 1px solid rgba(245, 158, 11, 0.25);
 }
 
 /* ============== MATRIX SIDEBAR ============== */
@@ -3496,18 +3499,21 @@ select:focus-visible {
 }
 
 .status-stat-linked {
-  background: var(--color-success);
-  color: var(--color-white);
+  background: var(--color-success-soft);
+  color: #166534;
+  border: 1px solid rgba(34, 197, 94, 0.25);
 }
 
 .status-stat-conflict {
-  background: var(--color-danger);
-  color: var(--color-white);
+  background: var(--color-danger-soft);
+  color: #991b1b;
+  border: 1px solid rgba(239, 68, 68, 0.25);
 }
 
 .status-stat-stale {
-  background: var(--color-warning);
-  color: var(--color-white);
+  background: var(--color-warning-soft);
+  color: #92400e;
+  border: 1px solid rgba(245, 158, 11, 0.25);
 }
 
 .status-stat-label {
@@ -3691,9 +3697,9 @@ label.btn-add-files {
 }
 
 .matrix-doc-tab-close:hover {
-  color: #ffffff;
-  background: #dc2626;
-  border-color: #b91c1c;
+  color: #991b1b;
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.35);
   transform: scale(1.08);
 }
 
@@ -3841,27 +3847,27 @@ label.btn-add-files {
 
 /* Lead/CEO matrix: clear primary actions (read-only completed cases stay default + :disabled opacity) */
 .matrix-actions .btn-danger:not(:disabled) {
-  background: #dc2626;
-  color: #ffffff;
-  border: 1px solid #b91c1c;
+  background: var(--color-danger-soft);
+  color: #991b1b;
+  border: 1px solid rgba(239, 68, 68, 0.25);
   font-weight: 700;
 }
 
 .matrix-actions .btn-danger:not(:disabled):hover {
-  background: #991b1b;
-  border-color: #7f1d1d;
+  background: rgba(239, 68, 68, 0.28);
+  border-color: rgba(220, 38, 38, 0.45);
 }
 
 .matrix-actions .btn-success:not(:disabled) {
-  background: #16a34a;
-  color: #ffffff;
-  border: 1px solid #15803d;
+  background: var(--color-success-soft);
+  color: #166534;
+  border: 1px solid rgba(34, 197, 94, 0.25);
   font-weight: 700;
 }
 
 .matrix-actions .btn-success:not(:disabled):hover {
-  background: #14532d;
-  border-color: #052e16;
+  background: rgba(34, 197, 94, 0.28);
+  border-color: rgba(22, 163, 74, 0.45);
 }
 
 /* ============== INSPECTION MODAL ============== */
@@ -3945,33 +3951,33 @@ label.btn-add-files {
 
 /* Solid CTAs in this modal (match matrix / submit actions, not soft tint buttons) */
 .inspection-modal .inspection-field-row .btn-primary {
-  background: var(--color-primary);
-  color: var(--color-white);
-  border: 1px solid var(--color-primary-700);
+  background: var(--color-primary-soft);
+  color: #1e40af;
+  border: 1px solid rgba(37, 99, 235, 0.25);
   font-weight: 700;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  box-shadow: none;
 }
 
 .inspection-modal .inspection-field-row .btn-primary:hover {
-  background: var(--color-primary-700);
-  border-color: #1e40af;
-  color: var(--color-white);
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+  background: var(--hover-primary-fill-strong);
+  border-color: rgba(37, 99, 235, 0.45);
+  color: var(--color-primary-700);
+  box-shadow: none;
 }
 
 .inspection-modal .inspection-conflict-row .btn-danger {
-  background: #dc2626;
-  color: var(--color-white);
-  border: 1px solid var(--color-danger-700);
+  background: var(--color-danger-soft);
+  color: #991b1b;
+  border: 1px solid rgba(239, 68, 68, 0.25);
   font-weight: 700;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  box-shadow: none;
 }
 
 .inspection-modal .inspection-conflict-row .btn-danger:hover {
-  background: var(--color-danger-700);
-  border-color: #7f1d1d;
-  color: var(--color-white);
-  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.35);
+  background: rgba(239, 68, 68, 0.28);
+  border-color: rgba(220, 38, 38, 0.45);
+  color: #7f1d1d;
+  box-shadow: none;
 }
 
 .inspection-modal .inspection-conflict-row .btn-outline.inspection-conflict-clear {
@@ -4061,9 +4067,9 @@ label.btn-add-files {
 }
 
 .inspection-evidence-status--linked {
-  border-color: #15803d;
-  color: var(--color-white);
-  background: #16a34a;
+  border-color: rgba(34, 197, 94, 0.45);
+  color: #166534;
+  background: var(--color-success-soft);
 }
 
 .inspection-evidence-status--not-linked {
@@ -4253,15 +4259,15 @@ label.btn-add-files {
 }
 
 .return-modal-actions .btn-danger {
-  background: #dc2626;
-  color: #ffffff;
-  border: 1px solid #b91c1c;
+  background: var(--color-danger-soft);
+  color: #991b1b;
+  border: 1px solid rgba(239, 68, 68, 0.25);
   font-weight: 700;
 }
 
 .return-modal-actions .btn-danger:hover {
-  background: #991b1b;
-  border-color: #7f1d1d;
+  background: rgba(239, 68, 68, 0.28);
+  border-color: rgba(220, 38, 38, 0.45);
 }
 
 /* ============== ENHANCED EMPTY STATES ============== */

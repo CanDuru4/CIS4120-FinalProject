@@ -3621,32 +3621,11 @@ function CaseEditorPage({
     setDragPoint(null);
     setSelectedRegion(null);
   }, [currentCase?.id, currentCase?.status]);
-
-  if (!currentCase) {
-    return (
-      <div className="dashboard-container">
-        <div className="dashboard-card">
-          <div className="empty-state">
-            <div className="empty-state-icon">
-              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="8" x2="12" y2="12"></line>
-                <line x1="12" y1="16" x2="12.01" y2="16"></line>
-              </svg>
-            </div>
-            <h3 className="empty-state-title">CASE NOT FOUND</h3>
-            <p className="empty-state-text">The requested case could not be located.</p>
-            <button className="btn btn-primary" onClick={onBack}>Go Back to Dashboard</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const editorReadOnly = !currentCase || caseIsReadOnlyForWriterStatus(currentCase.status);
 
   const userInitials = user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   const myNotifications = notifications.filter(n => notificationVisibleToUser(n, user));
   const unreadBellCount = myNotifications.filter(n => !n.read).length;
-  const editorReadOnly = caseIsReadOnlyForWriterStatus(currentCase.status);
 
   const handleFieldEdit = (field: DeclarantField) => {
     if (editorReadOnly) return;
@@ -3774,6 +3753,27 @@ function CaseEditorPage({
     },
     [editorReadOnly, markEvidenceMode, selectedRegion],
   );
+
+  if (!currentCase) {
+    return (
+      <div className="dashboard-container">
+        <div className="dashboard-card">
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+            </div>
+            <h3 className="empty-state-title">CASE NOT FOUND</h3>
+            <p className="empty-state-text">The requested case could not be located.</p>
+            <button className="btn btn-primary" onClick={onBack}>Go Back to Dashboard</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleAddComment = (text: string) => {
     if (editorReadOnly) return;
@@ -5200,38 +5200,16 @@ function ReviewMatrixPage({
   useEffect(() => {
     matrixDirtyRef.current = showMatrixUnsavedHint;
   }, [showMatrixUnsavedHint]);
-
-  if (!currentCase) {
-    return (
-      <div className="dashboard-container">
-        <div className="dashboard-card">
-          <div className="empty-state">
-            <div className="empty-state-icon">
-              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="8" x2="12" y2="12"></line>
-                <line x1="12" y1="16" x2="12.01" y2="16"></line>
-              </svg>
-            </div>
-            <h3 className="empty-state-title">CASE NOT FOUND</h3>
-            <p className="empty-state-text">The requested case could not be located.</p>
-            <button className="btn btn-primary" onClick={onBack}>Go Back to Dashboard</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const matrixReadOnlyCustomsCompleted = currentCase.status === 'completed';
+  const matrixReadOnlyCustomsCompleted = currentCase?.status === 'completed';
   const matrixReadOnlyLeadCeoQueue =
-    user.role === 'lead_reviewer' && currentCase.status === 'ceo_review';
-  const matrixReadOnly = matrixReadOnlyCustomsCompleted || matrixReadOnlyLeadCeoQueue;
+    user.role === 'lead_reviewer' && currentCase?.status === 'ceo_review';
+  const matrixReadOnly = !currentCase || matrixReadOnlyCustomsCompleted || matrixReadOnlyLeadCeoQueue;
 
   const userInitials = user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   const myMatrixNotifications = notifications.filter(n => notificationVisibleToUser(n, user));
   const unreadMatrixBellCount = myMatrixNotifications.filter(n => !n.read).length;
 
-  const matrixDocs = currentCase.docs;
+  const matrixDocs = currentCase?.docs ?? [];
   const matrixColumnDocIds =
     matrixDocs.length > 0 ? matrixDocs.map(d => d.id) : [MATRIX_NO_FILE_COLUMN_ID];
 
@@ -5240,14 +5218,21 @@ function ReviewMatrixPage({
     ...(inspectingCell ? { [inspectingCell.field]: editingFieldValue } : {}),
   };
 
-  const linkedCount = countMatrixCells(currentCase, 'linked', matrixLiveFieldOverrides, matrixColumnDocIds);
-  const conflictCount = countMatrixCells(currentCase, 'conflict', matrixLiveFieldOverrides, matrixColumnDocIds);
-  const staleCount = countMatrixCells(currentCase, 'stale', matrixLiveFieldOverrides, matrixColumnDocIds);
+  const linkedCount = currentCase
+    ? countMatrixCells(currentCase, 'linked', matrixLiveFieldOverrides, matrixColumnDocIds)
+    : 0;
+  const conflictCount = currentCase
+    ? countMatrixCells(currentCase, 'conflict', matrixLiveFieldOverrides, matrixColumnDocIds)
+    : 0;
+  const staleCount = currentCase
+    ? countMatrixCells(currentCase, 'stale', matrixLiveFieldOverrides, matrixColumnDocIds)
+    : 0;
   const matrixManyCols = matrixDocs.length > 8;
   const matrixScrollMinWidth =
     matrixManyCols && matrixDocs.length > 0 ? 172 + matrixDocs.length * 122 : undefined;
 
   const handleCellClick = (field: DeclarantField, docId: string) => {
+    if (!currentCase) return;
     const v = matrixPendingFields[field] ?? currentCase.fields[field] ?? '';
     setEditingFieldValue(v);
     setInspectingCell({ field, docId });
@@ -5349,6 +5334,27 @@ function ReviewMatrixPage({
   const cancelMatrixAttachmentDelete = useCallback(() => {
     setMatrixAttachmentDeletePrompt(null);
   }, []);
+
+  if (!currentCase) {
+    return (
+      <div className="dashboard-container">
+        <div className="dashboard-card">
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+            </div>
+            <h3 className="empty-state-title">CASE NOT FOUND</h3>
+            <p className="empty-state-text">The requested case could not be located.</p>
+            <button className="btn btn-primary" onClick={onBack}>Go Back to Dashboard</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleReturn = () => {
     if (matrixReadOnly) return;
