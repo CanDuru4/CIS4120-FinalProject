@@ -1861,10 +1861,9 @@ function DashboardPage({
                           <line x1="12" y1="3" x2="12" y2="15"></line>
                         </svg>
                       </div>
-                      <p className="writer-drop-zone-text">Drag and drop to upload files,<br />Create a new case</p>
-                      <button className="btn btn-primary writer-create-case-btn" onClick={(e) => { e.stopPropagation(); createCase(); }}>
-                        Create Case
-                      </button>
+                      <p className="writer-drop-zone-text">
+                        Create a new case, then upload files in the editor.
+                      </p>
                     </div>
                     <p className="writer-upload-hint" aria-hidden="true">
                       Common uploads: Invoice • Packing list • Insurance • ATR
@@ -1924,7 +1923,7 @@ function DashboardPage({
                   <button className="writer-big-create-btn" onClick={createCase}>
                     + Create Case
                   </button>
-                  <p className="writer-cta-note">Note: A blank page will be opened for case</p>
+                  <p className="writer-cta-note">Opens the case editor</p>
                 </div>
               </div>
             </div>
@@ -2528,10 +2527,12 @@ function CaseEditorPage({
   const [, setLinkOverlayTick] = useState(0);
   const [draggingField, setDraggingField] = useState<DeclarantField | null>(null);
   const [dragPoint, setDragPoint] = useState<{ x: number; y: number } | null>(null);
+  const [hoverRegionId, setHoverRegionId] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   /** When true, clicks on the document add a highlight (avoids accidental placement). */
   const [markEvidenceMode, setMarkEvidenceMode] = useState(false);
   const [docEmptyHintDismissed, setDocEmptyHintDismissed] = useState(false);
+  const [evidenceInlineHintDismissed, setEvidenceInlineHintDismissed] = useState(false);
   const [attachmentDeletePrompt, setAttachmentDeletePrompt] = useState<{
     docId: string;
     name: string;
@@ -2563,6 +2564,8 @@ function CaseEditorPage({
     iban: null,
     others: null,
   });
+  const handleSuppressClickRef = useRef(false);
+  const dragMovedRef = useRef(false);
   const docViewerRef = useRef<HTMLDivElement>(null);
   const declarantFieldsRef = useRef<HTMLDivElement>(null);
   const pdfLayoutRef = useRef<PdfPageLayoutInfo | null>(null);
@@ -2681,6 +2684,15 @@ function CaseEditorPage({
     setDocEmptyHintDismissed(false);
   }, [activeDocId]);
 
+  useEffect(() => {
+    setEvidenceInlineHintDismissed(false);
+  }, [caseId]);
+
+  useEffect(() => {
+    if (!currentCase) return;
+    if (currentCase.links.length > 0) setEvidenceInlineHintDismissed(true);
+  }, [currentCase?.links.length]);
+
   // Declarant link origin: center of the drag handle (blue ring), not the row’s right edge — matches trash chip + path start.
   const getFieldPosition = useCallback((field: DeclarantField): { x: number; y: number } | null => {
     const editorEl = editorRef.current;
@@ -2689,7 +2701,8 @@ function CaseEditorPage({
 
     const dh = dragHandleRefs.current[field];
     if (dh) {
-      const r = dh.getBoundingClientRect();
+      const circleEl = dh.querySelector('.drag-circle');
+      const r = (circleEl instanceof HTMLElement ? circleEl : dh).getBoundingClientRect();
       return {
         x: r.left + r.width / 2 - editorRect.left,
         y: r.top + r.height / 2 - editorRect.top,
@@ -2719,6 +2732,46 @@ function CaseEditorPage({
       y: regionRect.top + regionRect.height / 2 - editorRect.top,
     };
   }, []);
+
+  /**
+   * Aim arrows at the region *edge* (not center) for cleaner visuals.
+   * Uses the rendered region element’s bounding box.
+   */
+  const getRegionEdgePosition = useCallback(
+    (start: { x: number; y: number }, regionId: string): { x: number; y: number } | null => {
+      const regionEl = regionRefs.current[regionId];
+      const editorEl = editorRef.current;
+      if (!regionEl || !editorEl) return null;
+
+      const regionRect = regionEl.getBoundingClientRect();
+      const editorRect = editorEl.getBoundingClientRect();
+
+      const cx = regionRect.left + regionRect.width / 2 - editorRect.left;
+      const cy = regionRect.top + regionRect.height / 2 - editorRect.top;
+      const dx = cx - start.x;
+      const dy = cy - start.y;
+
+      const w2 = Math.max(1, regionRect.width / 2);
+      const h2 = Math.max(1, regionRect.height / 2);
+      const adx = Math.abs(dx);
+      const ady = Math.abs(dy);
+      if (adx < 0.0001 && ady < 0.0001) return { x: cx, y: cy };
+
+      const tx = adx > 0.0001 ? w2 / adx : Number.POSITIVE_INFINITY;
+      const ty = ady > 0.0001 ? h2 / ady : Number.POSITIVE_INFINITY;
+      const t = Math.min(tx, ty);
+
+      const len = Math.hypot(dx, dy);
+      const ux = len > 0.0001 ? dx / len : 0;
+      const uy = len > 0.0001 ? dy / len : 0;
+      const pad = 2.5;
+      return {
+        x: cx - dx * t - ux * pad,
+        y: cy - dy * t - uy * pad,
+      };
+    },
+    [],
+  );
 
   /** Link SVG reads refs during render; DOM may lag one frame after state (e.g. toolbar toggles). Include UI that shifts the doc pane + bump tick in useLayoutEffect below. */
   const linkOverlayDepsKey =
@@ -2783,7 +2836,7 @@ function CaseEditorPage({
     return () => el.removeEventListener('scroll', onScroll);
   }, [caseId]);
 
-  // Curved path with a straight final segment so markerEnd tangent aims at `end` (circle center).
+  // Simple path for link arrows (minimal, readable).
   const generatePath = useCallback((start: { x: number; y: number }, end: { x: number; y: number }): string => {
     const dx = end.x - start.x;
     const dy = end.y - start.y;
@@ -2791,14 +2844,12 @@ function CaseEditorPage({
     if (dist < 1) {
       return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
     }
-    const ux = dx / dist;
-    const uy = dy / dist;
-    const straightLen = Math.min(56, dist * 0.88, Math.max(12, dist * 0.2));
-    const joinX = end.x - ux * straightLen;
-    const joinY = end.y - uy * straightLen;
     const midX = (start.x + end.x) / 2;
-    const controlOffset = Math.min(80, Math.abs(end.x - start.x) / 3);
-    return `M ${start.x} ${start.y} C ${start.x + controlOffset} ${start.y}, ${midX} ${(start.y + end.y) / 2}, ${joinX} ${joinY} L ${end.x} ${end.y}`;
+    const midY = (start.y + end.y) / 2;
+    const bend = Math.min(48, Math.max(16, Math.abs(dx) / 4));
+    const cx = start.x + bend;
+    const cy = midY;
+    return `M ${start.x} ${start.y} Q ${cx} ${cy} ${end.x} ${end.y}`;
   }, []);
 
   // Start field drag
@@ -2809,6 +2860,7 @@ function CaseEditorPage({
     const editorEl = editorRef.current;
     if (!editorEl) return;
 
+    dragMovedRef.current = false;
     setDraggingField(field);
     const editorRect = editorEl.getBoundingClientRect();
     setDragPoint({
@@ -2824,10 +2876,43 @@ function CaseEditorPage({
     if (!editorEl) return;
 
     const editorRect = editorEl.getBoundingClientRect();
-    setDragPoint({
+    const nextPt = {
       x: event.clientX - editorRect.left,
       y: event.clientY - editorRect.top,
-    });
+    };
+    setDragPoint(nextPt);
+
+    // Mark as a real drag once the pointer has moved a bit.
+    const fieldPos = getFieldPosition(draggingField);
+    if (fieldPos) {
+      const dx = nextPt.x - fieldPos.x;
+      const dy = nextPt.y - fieldPos.y;
+      if (dx * dx + dy * dy > 36) dragMovedRef.current = true;
+    }
+
+    if (!currentCase) {
+      setHoverRegionId(null);
+      return;
+    }
+
+    // Live “drop target” highlight under cursor.
+    const regionIds = Object.keys(regionRefs.current);
+    let hovered: string | null = null;
+    for (const regionId of regionIds) {
+      const regionEl = regionRefs.current[regionId];
+      if (!regionEl) continue;
+      const rect = regionEl.getBoundingClientRect();
+      if (
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom
+      ) {
+        hovered = regionId;
+        break;
+      }
+    }
+    setHoverRegionId(hovered);
   }, [draggingField]);
 
   // Finish drag - check if over a region
@@ -2835,11 +2920,13 @@ function CaseEditorPage({
     if (!draggingField || !currentCase) {
       setDraggingField(null);
       setDragPoint(null);
+      setHoverRegionId(null);
       return;
     }
     if (isWriterEditorLocked(cases, caseId)) {
       setDraggingField(null);
       setDragPoint(null);
+      setHoverRegionId(null);
       return;
     }
 
@@ -2888,8 +2975,11 @@ function CaseEditorPage({
       }
     }
 
+    // If we actually dragged (or dropped), suppress the following click on the handle.
+    handleSuppressClickRef.current = dragMovedRef.current || targetRegion != null;
     setDraggingField(null);
     setDragPoint(null);
+    setHoverRegionId(null);
   }, [draggingField, currentCase, caseId, setCases, cases]);
 
   // Add document region marker
@@ -3794,34 +3884,34 @@ function CaseEditorPage({
                 {/* Blue arrowhead — unlink chip at declarant anchor (same colors as `.doc-tab-close`). */}
                 <marker
                   id="arrowhead-blue"
-                  markerWidth="10"
-                  markerHeight="7"
-                  refX="10"
-                  refY="3.5"
+                  markerWidth="8"
+                  markerHeight="6"
+                  refX="8"
+                  refY="3"
                   orient="auto"
                 >
-                  <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb" />
+                  <polygon points="0 0, 8 3, 0 6" fill="rgba(59, 130, 246, 0.8)" />
                 </marker>
                 {/* Amber arrowhead for dragging */}
                 <marker
                   id="arrowhead-conflict"
-                  markerWidth="10"
-                  markerHeight="7"
-                  refX="10"
-                  refY="3.5"
+                  markerWidth="8"
+                  markerHeight="6"
+                  refX="8"
+                  refY="3"
                   orient="auto"
                 >
-                  <polygon points="0 0, 10 3.5, 0 7" fill="#ef4444" />
+                  <polygon points="0 0, 8 3, 0 6" fill="rgba(248, 113, 113, 0.85)" />
                 </marker>
                 <marker
                   id="arrowhead-amber"
-                  markerWidth="10"
-                  markerHeight="7"
-                  refX="10"
-                  refY="3.5"
+                  markerWidth="8"
+                  markerHeight="6"
+                  refX="8"
+                  refY="3"
                   orient="auto"
                 >
-                  <polygon points="0 0, 10 3.5, 0 7" fill="#f59e0b" />
+                  <polygon points="0 0, 8 3, 0 6" fill="rgba(245, 158, 11, 0.85)" />
                 </marker>
               </defs>
 
@@ -3833,7 +3923,7 @@ function CaseEditorPage({
                 })
                 .map(link => {
                 const fieldPos = getFieldPosition(link.field);
-                const regionPos = getRegionPosition(link.region);
+                const regionPos = fieldPos ? getRegionEdgePosition(fieldPos, link.region) : null;
                 if (!fieldPos || !regionPos) return null;
                 if (
                   !evidenceLinkAnchorsInView(
@@ -3860,41 +3950,6 @@ function CaseEditorPage({
                         link.status === 'conflict' ? 'url(#arrowhead-conflict)' : 'url(#arrowhead-blue)'
                       }
                     />
-                    {/* Remove-link control at declarant anchor (arrow origin), Chrome-style */}
-                    <g
-                      className="link-label-group"
-                      onClick={() => {
-                        if (!editorReadOnly) removeLink(link.field);
-                      }}
-                    >
-                      <title>{`Remove evidence link (${FIELD_LABELS[link.field]})`}</title>
-                      <g transform={`translate(${fieldPos.x}, ${fieldPos.y})`}>
-                        {/* Optical nudge: anchor reads slightly left of the drag ring + line join */}
-                        <g transform="translate(1.75, 0)">
-                        <g className="link-trash-scale">
-                          <circle r={11} className="link-unlink-chip-bg" />
-                          <svg
-                            className="link-unlink-trash-svg"
-                            x={-11}
-                            y={-11}
-                            width={22}
-                            height={22}
-                            viewBox="0 0 24 24"
-                            aria-hidden={true}
-                          >
-                            <g transform="translate(12, 12) scale(0.66) translate(-12, -12)">
-                              <g transform="translate(0.35, 0)">
-                                <path
-                                  fill="currentColor"
-                                  d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zm13-14h-3.5l-1-1h-5l-1 1H5v2h14V4z"
-                                />
-                              </g>
-                            </g>
-                          </svg>
-                        </g>
-                        </g>
-                      </g>
-                    </g>
                     {/* Conflict marker */}
                     {link.status === 'conflict' && (
                       <g transform={`translate(${midX + 36}, ${midY})`}>
@@ -3921,8 +3976,12 @@ function CaseEditorPage({
                 const fieldEl = fieldRefs.current[draggingField];
                 if (editorEl && docEl && declEl && fieldEl) {
                   const er = editorEl.getBoundingClientRect();
-                  const dcx = dragPoint.x + er.left;
-                  const dcy = dragPoint.y + er.top;
+                  const endPos =
+                    hoverRegionId != null
+                      ? (getRegionEdgePosition(fieldPos, hoverRegionId) ?? dragPoint)
+                      : dragPoint;
+                  const dcx = endPos.x + er.left;
+                  const dcy = endPos.y + er.top;
                   if (
                     !clientPointInsideRect(dcx, dcy, docEl.getBoundingClientRect()) ||
                     !clientPointInsideRect(
@@ -3934,7 +3993,11 @@ function CaseEditorPage({
                     return null;
                   }
                 }
-                const pathD = generatePath(fieldPos, dragPoint);
+                const target =
+                  hoverRegionId != null
+                    ? (getRegionEdgePosition(fieldPos, hoverRegionId) ?? dragPoint)
+                    : dragPoint;
+                const pathD = generatePath(fieldPos, target);
                 return (
                   <path
                     d={pathD}
@@ -3951,6 +4014,23 @@ function CaseEditorPage({
                 <h2 className="panel-title">DECLARANT</h2>
               </div>
               <div className="panel-divider"></div>
+              {!editorReadOnly &&
+                currentCase.docs.length > 0 &&
+                !evidenceInlineHintDismissed && (
+                  <div className="evidence-inline-hint" role="note" aria-label="How to link evidence">
+                    <span className="evidence-inline-hint-text">
+                      Link evidence in 3 steps: <strong>Mark evidence</strong> → click the document to place a highlight → drag a field’s grip onto the highlight.
+                    </span>
+                    <button
+                      type="button"
+                      className="evidence-inline-hint-dismiss"
+                      aria-label="Dismiss hint"
+                      onClick={() => setEvidenceInlineHintDismissed(true)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
               <div className="declarant-fields" ref={declarantFieldsRef}>
                 {(Object.keys(FIELD_LABELS) as DeclarantField[]).map((field, idx) => {
                   const hasLink = currentCase.links.some(l => l.field === field);
@@ -4014,14 +4094,29 @@ function CaseEditorPage({
                             </button>
                           ) : null}
                           {!editorReadOnly ? (
-                            <div
-                              ref={(el) => {
-                                dragHandleRefs.current[field] = el;
-                              }}
-                              className={`drag-handle ${hasLink ? 'has-link' : ''} ${draggingField === field ? 'dragging' : ''}`}
-                              onMouseDown={(e) => startFieldDrag(field, e)}
-                            >
-                              <span className="drag-circle"></span>
+                            <div className="field-link-controls">
+                              <div
+                                ref={(el) => {
+                                  dragHandleRefs.current[field] = el;
+                                }}
+                                className={`drag-handle ${hasLink ? 'has-link' : ''} ${draggingField === field ? 'dragging' : ''}`}
+                                onMouseDown={(e) => startFieldDrag(field, e)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  if (handleSuppressClickRef.current) {
+                                    handleSuppressClickRef.current = false;
+                                    return;
+                                  }
+                                  if (!editorReadOnly && hasLink) removeLink(field);
+                                }}
+                                title="Drag to link evidence"
+                                aria-label={`Drag ${FIELD_LABELS[field]} to link evidence`}
+                              >
+                                <span className="drag-circle" aria-hidden={true}>
+                                  <span className="drag-grip" aria-hidden={true}></span>
+                                </span>
+                              </div>
                             </div>
                           ) : null}
                         </div>
@@ -4272,7 +4367,7 @@ function CaseEditorPage({
                                       <div
                                         key={region.id}
                                         ref={(el) => { regionRefs.current[region.id] = el; }}
-                                        className={`region-marker ${isSelected ? 'selected' : ''} ${linkedField ? 'linked' : ''}`}
+                                        className={`region-marker ${isSelected ? 'selected' : ''} ${linkedField ? 'linked' : ''} ${draggingField && hoverRegionId === region.id ? 'drop-hover' : ''}`}
                                         style={{
                                           left: `${disp.x}%`,
                                           top: `${disp.y}%`,
@@ -4370,7 +4465,7 @@ function CaseEditorPage({
                                     <div
                                       key={region.id}
                                       ref={(el) => { regionRefs.current[region.id] = el; }}
-                                      className={`region-marker ${isSelected ? 'selected' : ''} ${linkedField ? 'linked' : ''}`}
+                                      className={`region-marker ${isSelected ? 'selected' : ''} ${linkedField ? 'linked' : ''} ${draggingField && hoverRegionId === region.id ? 'drop-hover' : ''}`}
                                       style={{
                                         left: `${disp.x}%`,
                                         top: `${disp.y}%`,
