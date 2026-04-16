@@ -2253,15 +2253,15 @@ select:focus-visible {
 
 /* Writer case editor: Submit Case — same solid treatment as matrix primary actions */
 .submit-area .btn-success:not(:disabled) {
-  background: var(--color-success-soft);
-  color: #166534;
-  border: 1px solid rgba(34, 197, 94, 0.25);
+  background: #16a34a;
+  color: #ffffff;
+  border: 1px solid #15803d;
   font-weight: 700;
 }
 
 .submit-area .btn-success:not(:disabled):hover {
-  background: rgba(34, 197, 94, 0.28);
-  border-color: rgba(22, 163, 74, 0.45);
+  background: #15803d;
+  border-color: #166534;
 }
 
 /* ============== SUBMIT MODAL ============== */
@@ -2572,10 +2572,94 @@ select:focus-visible {
   cursor: default;
 }
 
-/* We moved “unlink” to the Linked pill; hide the old SVG unlink chip if present. */
+/* Unlink trash chip sits on the SVG overlay; needs pointer events while overlay is pointer-events: none */
 .editor-svg-overlay .link-label-group {
-  display: none;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.declarant-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.declarant-panel-header .panel-title {
+  margin: 0;
+}
+
+.editor-link-arrows-global {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 11px;
+  margin: -2px 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  user-select: none;
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(248, 250, 252, 0.75);
+  line-height: 1.25;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.editor-link-arrows-global:hover {
+  background: rgba(239, 246, 255, 0.92);
+  border-color: rgba(37, 99, 235, 0.32);
+  color: var(--color-text);
+}
+
+.editor-link-arrows-global input {
+  margin: 0;
+  flex-shrink: 0;
+  width: 1.0625rem;
+  height: 1.0625rem;
+  min-width: 1.0625rem;
+  min-height: 1.0625rem;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.editor-field-arrow-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  color: rgba(37, 99, 235, 0.9);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease,
+    transform 0.12s ease;
+}
+
+.editor-field-arrow-toggle:hover {
+  background: rgba(239, 246, 255, 0.98);
+  border-color: rgba(37, 99, 235, 0.45);
+  transform: scale(1.05);
+}
+
+.editor-field-arrow-toggle--off {
+  color: rgba(100, 116, 139, 0.85);
+}
+
+.editor-field-arrow-toggle--off:hover {
+  background: rgba(248, 250, 252, 0.98);
+  border-color: rgba(148, 163, 184, 0.65);
 }
 
 .link-line {
@@ -2624,6 +2708,15 @@ select:focus-visible {
 .link-label-group {
   pointer-events: auto;
   cursor: pointer;
+}
+
+.link-label-group:focus {
+  outline: none;
+}
+
+.link-label-group:focus-visible circle.link-unlink-chip-bg {
+  stroke: var(--color-primary);
+  stroke-width: 2px;
 }
 
 .link-trash-scale {
@@ -3019,17 +3112,18 @@ select:focus-visible {
 }
 
 .region-marker-trash:hover {
-  background: rgba(239, 68, 68, 0.22);
-  border-color: rgba(239, 68, 68, 0.42);
-  color: #991b1b;
-  box-shadow: 0 2px 6px rgba(127, 29, 29, 0.18);
-  transform: scale(1.08);
+  background: #dc2626;
+  border-color: #b91c1c;
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(185, 28, 28, 0.45);
+  transform: scale(1.1);
 }
 
 .region-marker-trash:active {
-  background: rgba(239, 68, 68, 0.32);
-  border-color: rgba(220, 38, 38, 0.55);
-  color: #7f1d1d;
+  background: #b91c1c;
+  border-color: #991b1b;
+  color: #ffffff;
+  transform: scale(1.05);
 }
 
 .region-marker-trash .region-marker-trash-icon {
@@ -3044,7 +3138,7 @@ select:focus-visible {
   flex-shrink: 0;
   position: relative;
   z-index: 1;
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.14);
   border: 2px solid rgba(71, 85, 105, 0.62);
   border-radius: 10px;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
@@ -3055,7 +3149,7 @@ select:focus-visible {
 
 .region-marker:hover .region-marker-inner {
   border-color: rgba(37, 99, 235, 0.85);
-  background: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.1);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.8),
     0 0 0 4px var(--color-primary-soft);
@@ -3064,7 +3158,7 @@ select:focus-visible {
 .region-marker.drop-hover .region-marker-inner {
   border-color: rgba(37, 99, 235, 0.98);
   border-width: 2px;
-  background: rgba(219, 234, 254, 0.55);
+  background: rgba(219, 234, 254, 0.2);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.85),
     0 0 0 6px var(--color-primary-ring);
@@ -3073,7 +3167,7 @@ select:focus-visible {
 .region-marker.selected .region-marker-inner {
   border-color: var(--color-primary);
   border-width: 2px;
-  background: rgba(255, 255, 255, 0.65);
+  background: rgba(37, 99, 235, 0.08);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.75),
     0 0 0 4px var(--color-primary-ring);
@@ -3127,7 +3221,7 @@ select:focus-visible {
 .inspection-region-marker.linked .region-marker-inner {
   border-color: rgba(22, 163, 74, 0.95);
   border-width: 2px;
-  background: rgba(240, 253, 244, 0.35);
+  background: rgba(240, 253, 244, 0.12);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.7),
     0 0 0 1px rgba(22, 101, 52, 0.1);
@@ -3255,8 +3349,8 @@ select:focus-visible {
 }
 
 .matrix-main {
-  padding: 24px 32px;
-  height: calc(80vh - 80px);
+  padding: 14px 16px;
+  height: calc(88vh - 80px);
   flex: 1;
   min-height: 0;
   box-sizing: border-box;
@@ -3277,10 +3371,233 @@ select:focus-visible {
   box-sizing: border-box;
 }
 
+.matrix-layout--full {
+  grid-template-columns: 1fr;
+}
+
+/* ===== Review matrix: PDF-primary split (A2) ===== */
+.matrix-split-tabs {
+  display: none;
+  gap: 8px;
+  padding: 0 0 10px;
+}
+
+.matrix-split-tab {
+  appearance: none;
+  border: 1px solid rgba(100, 116, 139, 0.25);
+  background: var(--color-surface-muted);
+  color: #334155;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 0.8125rem;
+  padding: 8px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.matrix-split-tab--active {
+  background: var(--color-primary-soft);
+  border-color: rgba(37, 99, 235, 0.25);
+  color: #1e40af;
+}
+
+.matrix-layout--pdf-split {
+  display: grid;
+  grid-template-columns: minmax(300px, var(--matrixPdfPct, 38%)) 14px minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.matrix-pdf-pane {
+  min-width: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.matrix-pdf-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-border);
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+}
+
+.matrix-pdf-toolbar-title {
+  font-family: var(--font-heading);
+  font-size: 0.8125rem;
+  font-weight: 800;
+  color: var(--color-text-muted);
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.matrix-pdf-toolbar-docname {
+  margin-left: 10px;
+  font-family: var(--font-heading);
+  font-size: 0.875rem;
+  font-weight: 800;
+  color: var(--color-navy);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: min(360px, 36vw);
+  display: inline-block;
+  vertical-align: bottom;
+}
+
+.matrix-pdf-add-files {
+  height: 34px;
+  padding: 0 14px;
+}
+
+.matrix-pdf-tabs-row {
+  padding: 10px 12px 0;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.matrix-pdf-empty {
+  display: block;
+  padding: 10px 2px 12px;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.matrix-pdf-view {
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 12px;
+  background: var(--color-bg);
+  overflow: auto;
+}
+
+.matrix-pdf-shell {
+  height: 100%;
+  min-height: 520px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-white);
+  overflow: hidden;
+}
+
+.matrix-pdf-js {
+  height: 100%;
+}
+
+.matrix-pdf-image-wrap {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+}
+
+.matrix-pdf-img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.matrix-pdf-placeholder {
+  height: 100%;
+  min-height: 520px;
+  border: 2px dashed rgba(148, 163, 184, 0.8);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  text-align: center;
+}
+
+.matrix-split-divider {
+  width: 14px;
+  cursor: col-resize;
+  position: relative;
+  margin: 0;
+  border-radius: 999px;
+}
+
+.matrix-split-divider::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 10px;
+  bottom: 10px;
+  width: 4px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.25);
+}
+
+.matrix-split-divider:hover::before {
+  background: rgba(37, 99, 235, 0.35);
+}
+
+.matrix-split-divider:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.matrix-review-pane {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+  gap: 16px;
+  height: 100%;
+}
+
+@media (max-width: 980px) {
+  .matrix-split-tabs {
+    display: flex;
+  }
+
+  .matrix-layout--pdf-split {
+    flex-direction: column;
+  }
+
+  .matrix-split-divider {
+    display: none;
+  }
+
+  .matrix-pdf-pane,
+  .matrix-review-pane {
+    width: 100% !important;
+  }
+
+  .matrix-layout--show-pdf .matrix-review-pane {
+    display: none;
+  }
+
+  .matrix-layout--show-review .matrix-pdf-pane {
+    display: none;
+  }
+
+  .matrix-review-pane {
+    grid-template-columns: 1fr;
+  }
+}
+
 .matrix-panel {
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
-  padding: 16px 20px;
+  padding: 6px 8px;
   overflow: hidden;
   min-width: 0;
   min-height: 0;
@@ -3293,14 +3610,28 @@ select:focus-visible {
   min-height: 0;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
+  display: flex;
+  align-items: stretch;
+  padding-bottom: 14px;
 }
 
 .matrix-table {
   width: 100%;
+  margin: 0;
   border-collapse: collapse;
   font-family: var(--font-body);
   table-layout: fixed;
   min-height: 100%;
+  height: 100%;
+  min-width: 100%;
+}
+
+.matrix-table-center {
+  width: 100%;
+  margin: 0;
+  min-height: 100%;
+  display: flex;
+  align-items: stretch;
 }
 
 .matrix-table.matrix-table--scroll-cols {
@@ -3356,29 +3687,29 @@ select:focus-visible {
 }
 
 .matrix-row-header {
-  padding: 22px 16px;
+  padding: 14px 12px;
   font-family: var(--font-heading);
-  font-size: 1rem;
+  font-size: 0.9375rem;
   font-weight: 600;
   color: var(--color-navy);
   text-align: left;
   border-bottom: 1px solid var(--color-border);
   vertical-align: middle;
   width: 24%;
-  min-width: 168px;
+  min-width: 150px;
   line-height: 1.4;
-  min-height: 4.75rem;
+  min-height: 3.5rem;
   box-sizing: border-box;
 }
 
 .matrix-cell {
-  padding: 22px 16px;
+  padding: 14px 12px;
   text-align: center;
   border-bottom: 1px solid var(--color-border);
   cursor: pointer;
   transition: background-color 0.15s ease, box-shadow 0.15s ease;
   vertical-align: middle;
-  min-height: 4.75rem;
+  min-height: 3.5rem;
   box-sizing: border-box;
 }
 
@@ -3424,11 +3755,11 @@ select:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   font-weight: 700;
-  font-size: 1.0625rem;
+  font-size: 0.95rem;
 }
 
 .matrix-icon-none {
@@ -3470,12 +3801,69 @@ select:focus-visible {
   height: 100%;
 }
 
+.matrix-view-docs-btn {
+  width: 100%;
+  font-weight: 700;
+}
+
+.matrix-add-docs-btn {
+  width: 100%;
+  font-weight: 700;
+}
+
+.matrix-docs-modal {
+  width: min(1180px, 96vw);
+  height: min(86vh, 920px);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.matrix-docs-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: #ffffff;
+}
+
+.matrix-docs-modal-title {
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-navy);
+}
+
+.matrix-docs-modal-view {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.matrix-docs-modal-shell {
+  height: auto;
+  min-height: 100%;
+  overflow: auto;
+}
+
+.matrix-docs-modal-view .matrix-pdf-js {
+  height: auto;
+}
+
 .matrix-status-summary {
   flex-shrink: 0;
   background: var(--color-white);
   border: 2px solid var(--color-navy);
   border-radius: var(--radius-md);
   padding: 16px;
+  box-sizing: border-box;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -3788,16 +4176,17 @@ label.btn-add-files {
 }
 
 .matrix-sidebar-bottom {
-  flex-shrink: 0;
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin-top: auto;
+  margin-top: 0;
+  min-height: 0;
   min-width: 0;
 }
 
 .matrix-comments-box {
-  flex-shrink: 0;
+  flex: 1 1 0;
   background: var(--color-white);
   border: 2px solid var(--color-navy);
   border-radius: var(--radius-md);
@@ -3805,12 +4194,13 @@ label.btn-add-files {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 180px;
   min-width: 0;
 }
 
 .matrix-comments-box .comments-list {
-  flex: 0 1 auto;
-  max-height: 168px;
+  flex: 1 1 0;
+  max-height: none;
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -3845,29 +4235,33 @@ label.btn-add-files {
   min-width: 0;
 }
 
+.matrix-actions-submit-group .btn-submit-review {
+  white-space: nowrap;
+}
+
 /* Lead/CEO matrix: clear primary actions (read-only completed cases stay default + :disabled opacity) */
 .matrix-actions .btn-danger:not(:disabled) {
-  background: var(--color-danger-soft);
-  color: #991b1b;
-  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: #dc2626;
+  color: #ffffff;
+  border: 1px solid #b91c1c;
   font-weight: 700;
 }
 
 .matrix-actions .btn-danger:not(:disabled):hover {
-  background: rgba(239, 68, 68, 0.28);
-  border-color: rgba(220, 38, 38, 0.45);
+  background: #b91c1c;
+  border-color: #991b1b;
 }
 
 .matrix-actions .btn-success:not(:disabled) {
-  background: var(--color-success-soft);
-  color: #166534;
-  border: 1px solid rgba(34, 197, 94, 0.25);
+  background: #16a34a;
+  color: #ffffff;
+  border: 1px solid #15803d;
   font-weight: 700;
 }
 
 .matrix-actions .btn-success:not(:disabled):hover {
-  background: rgba(34, 197, 94, 0.28);
-  border-color: rgba(22, 163, 74, 0.45);
+  background: #15803d;
+  border-color: #166534;
 }
 
 /* ============== INSPECTION MODAL ============== */
@@ -3966,17 +4360,17 @@ label.btn-add-files {
 }
 
 .inspection-modal .inspection-conflict-row .btn-danger {
-  background: var(--color-danger-soft);
-  color: #991b1b;
-  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: #dc2626;
+  color: #ffffff;
+  border: 1px solid #b91c1c;
   font-weight: 700;
   box-shadow: none;
 }
 
 .inspection-modal .inspection-conflict-row .btn-danger:hover {
-  background: rgba(239, 68, 68, 0.28);
-  border-color: rgba(220, 38, 38, 0.45);
-  color: #7f1d1d;
+  background: #b91c1c;
+  border-color: #991b1b;
+  color: #ffffff;
   box-shadow: none;
 }
 
@@ -4713,6 +5107,12 @@ label.btn-add-files {
   min-height: 0;
 }
 
+/* Bottom row cards (Upload / Create Case) should match height exactly */
+.writer-left-column > .writer-box:last-child,
+.writer-right-column > .writer-box:last-child {
+  height: 170px;
+}
+
 /* Top section grows; bottom box (file upload / CTA) stays compact and aligns across columns */
 .writer-left-column > .writer-box:first-child {
   flex: 1;
@@ -5077,9 +5477,9 @@ label.btn-add-files {
 }
 
 .writer-activity-list {
-  flex: 0 1 auto;
+  flex: 1 1 0;
   min-height: 0;
-  max-height: calc(5 * 4.6rem);
+  max-height: none;
   overflow-y: auto;
   padding: 8px 0;
   -webkit-overflow-scrolling: touch;
@@ -5095,6 +5495,22 @@ label.btn-add-files {
 
 .writer-activity-item:hover {
   background: var(--hover-surface);
+}
+
+.writer-activity-item:hover .writer-activity-meta,
+.writer-activity-item:hover .writer-activity-time {
+  color: var(--color-text);
+  opacity: 1;
+}
+
+.writer-activity-change {
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.writer-activity-meta-sep {
+  color: var(--color-text-muted);
+  opacity: 0.55;
 }
 
 .writer-activity-info {
@@ -5182,6 +5598,11 @@ label.btn-add-files {
 
   .writer-left-column > .writer-box:first-child {
     flex: 0 1 auto;
+  }
+
+  .writer-left-column > .writer-box:last-child,
+  .writer-right-column > .writer-box:last-child {
+    height: auto;
   }
 
   .writer-activity-box {
