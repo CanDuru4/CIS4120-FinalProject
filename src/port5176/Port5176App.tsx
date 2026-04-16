@@ -355,6 +355,157 @@ function regionDisplayPercents(region: DocumentRegion, L: PdfPageLayoutInfo | nu
 
 type RegionResizeHandle = 'nw' | 'ne' | 'sw' | 'se' | 'n';
 
+/** Writer dashboard “Recent activity”: last explicit bump + merged comments/notifications. */
+type WriterRecentActivityKind =
+  | 'created'
+  | 'data_change'
+  | 'evidence_change'
+  | 'draft_saved'
+  | 'comment'
+  | 'submitted_review'
+  | 'returned'
+  | 'review_advance'
+  | 'customs_completed'
+  | 'matrix_update'
+  | 'review_update';
+
+type WriterRecentActivity = { at: Date; kind: WriterRecentActivityKind };
+
+const WRITER_RECENT_ACTIVITY_KINDS = new Set<string>([
+  'created',
+  'data_change',
+  'evidence_change',
+  'draft_saved',
+  'comment',
+  'submitted_review',
+  'returned',
+  'review_advance',
+  'customs_completed',
+  'matrix_update',
+  'review_update',
+]);
+
+function isWriterRecentActivityKind(k: string): k is WriterRecentActivityKind {
+  return WRITER_RECENT_ACTIVITY_KINDS.has(k);
+}
+
+function parseUnknownTimeMs(v: unknown): number {
+  if (v instanceof Date) {
+    const t = v.getTime();
+    return Number.isFinite(t) ? t : 0;
+  }
+  if (typeof v === 'string' || typeof v === 'number') {
+    const t = new Date(v).getTime();
+    return Number.isFinite(t) ? t : 0;
+  }
+  return 0;
+}
+
+function sanitizeWriterRecentActivity(raw: unknown): WriterRecentActivity | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const kind = (raw as { kind?: unknown }).kind;
+  if (typeof kind !== 'string' || !isWriterRecentActivityKind(kind)) return undefined;
+  const atMs = parseUnknownTimeMs((raw as { at?: unknown }).at);
+  if (!atMs) return undefined;
+  return { at: new Date(atMs), kind };
+}
+
+function bumpWriterRecentActivity(c: Case, kind: WriterRecentActivityKind): Case {
+  return { ...c, writerRecentActivity: { at: new Date(), kind } };
+}
+
+function writerRecentActivityKindRank(kind: WriterRecentActivityKind): number {
+  switch (kind) {
+    case 'submitted_review':
+    case 'returned':
+    case 'review_advance':
+    case 'customs_completed':
+      return 5;
+    case 'evidence_change':
+    case 'data_change':
+    case 'draft_saved':
+    case 'matrix_update':
+      return 3;
+    case 'comment':
+      return 2;
+    case 'review_update':
+      return 1;
+    case 'created':
+      return 0;
+    default:
+      return 0;
+  }
+}
+
+function writerRecentActivityLabel(kind: WriterRecentActivityKind): string {
+  switch (kind) {
+    case 'created':
+      return 'Created';
+    case 'data_change':
+      return 'Data change';
+    case 'evidence_change':
+      return 'Evidence change';
+    case 'draft_saved':
+      return 'Draft saved';
+    case 'comment':
+      return 'Comment';
+    case 'submitted_review':
+      return 'Submitted for review';
+    case 'returned':
+      return 'Returned';
+    case 'review_advance':
+      return 'Sent to CEO';
+    case 'customs_completed':
+      return 'Submitted to customs';
+    case 'matrix_update':
+      return 'Matrix update';
+    case 'review_update':
+      return 'Review update';
+    default:
+      return 'Updated';
+  }
+}
+
+function notificationMessageToWriterActivityKind(message: string): WriterRecentActivityKind {
+  const m = message.toLowerCase();
+  if (m.includes('submitted for review')) return 'submitted_review';
+  if (m.includes('returned for corrections')) return 'returned';
+  if (m.includes('sent to ceo')) return 'review_advance';
+  if (m.includes('submitted to customs')) return 'customs_completed';
+  return 'review_update';
+}
+
+type WriterActivityPick = { timeMs: number; kind: WriterRecentActivityKind };
+
+/** Sort + label writer “Recent activity” from case bumps, comments, and writer-visible notifications. */
+function pickWriterDashboardActivity(c: Case, notifications: Notification[], user: User): WriterActivityPick {
+  type Cand = { t: number; kind: WriterRecentActivityKind };
+  const cands: Cand[] = [];
+  const createdMs = parseUnknownTimeMs(c.createdAt);
+  cands.push({ t: createdMs, kind: 'created' });
+  const wr = sanitizeWriterRecentActivity(c.writerRecentActivity);
+  if (wr) cands.push({ t: wr.at.getTime(), kind: wr.kind });
+  for (const com of c.comments) {
+    cands.push({ t: parseUnknownTimeMs(com.timestamp), kind: 'comment' });
+  }
+  for (const n of notifications) {
+    if (n.caseId !== c.id) continue;
+    if (!notificationVisibleToUser(n, user)) continue;
+    cands.push({
+      t: parseUnknownTimeMs(n.timestamp),
+      kind: notificationMessageToWriterActivityKind(n.message),
+    });
+  }
+  let best: Cand = cands[0] ?? { t: 0, kind: 'created' };
+  for (const x of cands) {
+    if (x.t > best.t) best = x;
+    else if (x.t === best.t && writerRecentActivityKindRank(x.kind) > writerRecentActivityKindRank(best.kind)) {
+      best = x;
+    }
+  }
+  return { timeMs: best.t, kind: best.kind };
+}
+
 type Case = {
   id: string;
   title: string;
@@ -372,6 +523,8 @@ type Case = {
   writerExitLaneAtReviewSubmit?: 'drafting' | 'missing_ev';
   /** Set when lead reviewer submits the case to the CEO queue. */
   passedLeadReviewBeforeCeo?: boolean;
+  /** Last writer-facing activity (sorting + “what changed” on dashboard). */
+  writerRecentActivity?: WriterRecentActivity;
 };
 
 const DEFAULT_CASE_FIELDS: Record<DeclarantField, string> = {
@@ -561,6 +714,7 @@ function normalizeCase(raw: Case): Case {
     regions,
     links,
     matrixManualConflicts,
+    writerRecentActivity: sanitizeWriterRecentActivity((raw as Case).writerRecentActivity),
   };
 }
 
@@ -1492,19 +1646,6 @@ function nextDefaultCaseTitle(existing: Case[]): string {
   return `Case #${max + 1}`;
 }
 
-/** Latest meaningful activity on a case (creation or any comment) — for writer “Recent activity”. */
-function caseLastActivityTimeMs(c: Case): number {
-  let t = c.createdAt instanceof Date ? c.createdAt.getTime() : new Date(c.createdAt as unknown as string).getTime();
-  if (!Number.isFinite(t)) t = 0;
-  for (const com of c.comments) {
-    const ct =
-      com.timestamp instanceof Date
-        ? com.timestamp.getTime()
-        : new Date(com.timestamp as unknown as string).getTime();
-    if (Number.isFinite(ct) && ct > t) t = ct;
-  }
-  return t;
-}
 
 function DashboardPage({
   user,
@@ -1550,6 +1691,7 @@ function DashboardPage({
       regions: [],
       comments: [],
       matrixManualConflicts: [],
+      writerRecentActivity: { at: new Date(), kind: 'created' },
     };
     setCases(prev => [...prev, newCase]);
     onOpenCase(newCase.id);
@@ -1600,30 +1742,19 @@ function DashboardPage({
   };
 
   const recentActivity = useMemo(() => {
-    const notifLatest = new Map<string, number>();
-    for (const n of notifications) {
-      if (!notificationVisibleToUser(n, user)) continue;
-      const ts =
-        n.timestamp instanceof Date
-          ? n.timestamp.getTime()
-          : new Date(n.timestamp as unknown as string).getTime();
-      if (!Number.isFinite(ts)) continue;
-      const prev = notifLatest.get(n.caseId) ?? 0;
-      if (ts > prev) notifLatest.set(n.caseId, ts);
-    }
     return [...cases]
       .map(c => {
-        const t = Math.max(caseLastActivityTimeMs(c), notifLatest.get(c.id) ?? 0);
+        const pick = pickWriterDashboardActivity(c, notifications, user);
         return {
           id: c.id,
           title: c.title,
           status: c.status,
           createdBy: c.createdBy,
-          timestamp: new Date(t),
+          timestamp: new Date(pick.timeMs),
+          activityLabel: writerRecentActivityLabel(pick.kind),
         };
       })
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-      .slice(0, 5);
+      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
   }, [cases, notifications, user]);
 
   const formatTimestamp = (date: Date): string => {
@@ -1908,7 +2039,14 @@ function DashboardPage({
                               </div>
                               <div className="writer-activity-meta">
                                 <span>Cr: by {activity.createdBy === user.name ? 'you' : activity.createdBy}</span>
+                                <span className="writer-activity-meta-sep" aria-hidden>
+                                  ·
+                                </span>
                                 <span className="writer-activity-time">{formatTimestamp(activity.timestamp)}</span>
+                                <span className="writer-activity-meta-sep" aria-hidden>
+                                  ·
+                                </span>
+                                <span className="writer-activity-change">{activity.activityLabel}</span>
                               </div>
                             </div>
                           </div>
@@ -2469,6 +2607,59 @@ const DECLARANT_FIELDS_ORDER: DeclarantField[] = [
   'others',
 ];
 
+const LS_EDITOR_LINK_ARROWS = 'port5176_editorLinkArrows';
+
+function readEditorLinkArrowPrefs(): {
+  showAll: boolean;
+  hiddenFields: DeclarantField[];
+  visibleSubsetWhenOff: DeclarantField[];
+} {
+  try {
+    const raw = localStorage.getItem(LS_EDITOR_LINK_ARROWS);
+    if (!raw) return { showAll: true, hiddenFields: [], visibleSubsetWhenOff: [] };
+    const j = JSON.parse(raw) as { showAll?: boolean; hiddenFields?: unknown; visibleSubsetWhenOff?: unknown };
+    const showAll = j.showAll !== false;
+    const hiddenFields: DeclarantField[] = [];
+    if (Array.isArray(j.hiddenFields)) {
+      for (const f of j.hiddenFields) {
+        if (typeof f === 'string' && DECLARANT_FIELDS_ORDER.includes(f as DeclarantField)) {
+          hiddenFields.push(f as DeclarantField);
+        }
+      }
+    }
+    const visibleSubsetWhenOff: DeclarantField[] = [];
+    if (Array.isArray(j.visibleSubsetWhenOff)) {
+      for (const f of j.visibleSubsetWhenOff) {
+        if (typeof f === 'string' && DECLARANT_FIELDS_ORDER.includes(f as DeclarantField)) {
+          visibleSubsetWhenOff.push(f as DeclarantField);
+        }
+      }
+    }
+    return { showAll, hiddenFields, visibleSubsetWhenOff };
+  } catch {
+    return { showAll: true, hiddenFields: [], visibleSubsetWhenOff: [] };
+  }
+}
+
+function persistEditorLinkArrowPrefs(
+  showAll: boolean,
+  hiddenFields: Iterable<DeclarantField>,
+  visibleSubsetWhenOff: Iterable<DeclarantField>,
+) {
+  try {
+    localStorage.setItem(
+      LS_EDITOR_LINK_ARROWS,
+      JSON.stringify({
+        showAll,
+        hiddenFields: [...hiddenFields],
+        visibleSubsetWhenOff: [...visibleSubsetWhenOff],
+      }),
+    );
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 type WriterSubmitIssue = { field: DeclarantField; kind: 'yellow' | 'red'; message: string };
 
 function fieldHasEvidenceLink(c: Case, field: DeclarantField): boolean {
@@ -2533,6 +2724,15 @@ function CaseEditorPage({
   const [markEvidenceMode, setMarkEvidenceMode] = useState(false);
   const [docEmptyHintDismissed, setDocEmptyHintDismissed] = useState(false);
   const [evidenceInlineHintDismissed, setEvidenceInlineHintDismissed] = useState(false);
+  const arrowPrefsInitial = readEditorLinkArrowPrefs();
+  const [showAllLinkArrows, setShowAllLinkArrows] = useState(arrowPrefsInitial.showAll);
+  const [hiddenLinkArrowFields, setHiddenLinkArrowFields] = useState<Set<DeclarantField>>(
+    () => new Set(arrowPrefsInitial.hiddenFields),
+  );
+  /** When global “show all” is off: only these fields draw link arrows (whitelist). */
+  const [linkArrowVisibleSubset, setLinkArrowVisibleSubset] = useState<Set<DeclarantField>>(
+    () => new Set(arrowPrefsInitial.visibleSubsetWhenOff),
+  );
   const [attachmentDeletePrompt, setAttachmentDeletePrompt] = useState<{
     docId: string;
     name: string;
@@ -2624,7 +2824,7 @@ function CaseEditorPage({
         if (c.id !== caseId) return c;
         let u = c;
         if (u.status === 'returned') u = { ...u, status: 'drafting' as const };
-        return normalizeWriterFacingKanbanStatus(u);
+        return bumpWriterRecentActivity(normalizeWriterFacingKanbanStatus(u), 'draft_saved');
       });
       const cur = next.find(x => x.id === caseId);
       if (cur) editorBaselineRef.current = cloneCaseDeep(cur);
@@ -2692,6 +2892,53 @@ function CaseEditorPage({
     if (!currentCase) return;
     if (currentCase.links.length > 0) setEvidenceInlineHintDismissed(true);
   }, [currentCase?.links.length]);
+
+  useEffect(() => {
+    persistEditorLinkArrowPrefs(showAllLinkArrows, hiddenLinkArrowFields, linkArrowVisibleSubset);
+  }, [showAllLinkArrows, hiddenLinkArrowFields, linkArrowVisibleSubset]);
+
+  const isLinkArrowVisibleForField = useCallback(
+    (field: DeclarantField) =>
+      showAllLinkArrows ? !hiddenLinkArrowFields.has(field) : linkArrowVisibleSubset.has(field),
+    [showAllLinkArrows, hiddenLinkArrowFields, linkArrowVisibleSubset],
+  );
+
+  const anyLinkArrowsShown = showAllLinkArrows || linkArrowVisibleSubset.size > 0;
+
+  const toggleGlobalLinkArrows = useCallback(() => {
+    if (showAllLinkArrows) {
+      setShowAllLinkArrows(false);
+      setLinkArrowVisibleSubset(new Set());
+      setHiddenLinkArrowFields(new Set());
+    } else if (linkArrowVisibleSubset.size > 0) {
+      setLinkArrowVisibleSubset(new Set());
+    } else {
+      setShowAllLinkArrows(true);
+      setHiddenLinkArrowFields(new Set());
+      setLinkArrowVisibleSubset(new Set());
+    }
+  }, [showAllLinkArrows, linkArrowVisibleSubset]);
+
+  const toggleFieldLinkArrow = useCallback(
+    (field: DeclarantField) => {
+      if (showAllLinkArrows) {
+        setHiddenLinkArrowFields(prev => {
+          const next = new Set(prev);
+          if (next.has(field)) next.delete(field);
+          else next.add(field);
+          return next;
+        });
+        return;
+      }
+      setLinkArrowVisibleSubset(prev => {
+        const next = new Set(prev);
+        if (next.has(field)) next.delete(field);
+        else next.add(field);
+        return next;
+      });
+    },
+    [showAllLinkArrows],
+  );
 
   // Declarant link origin: center of the drag handle (blue ring), not the row’s right edge — matches trash chip + path start.
   const getFieldPosition = useCallback((field: DeclarantField): { x: number; y: number } | null => {
@@ -2969,7 +3216,7 @@ function CaseEditorPage({
           prev.map(c => {
             if (c.id !== caseId) return c;
             const links = c.links.filter(l => l.field !== draggingField);
-            return { ...c, links: [...links, newLink] };
+            return bumpWriterRecentActivity({ ...c, links: [...links, newLink] }, 'evidence_change');
           }),
         );
       }
@@ -3026,7 +3273,7 @@ function CaseEditorPage({
 
     setCases(prev => prev.map(c => {
       if (c.id === caseId) {
-        return { ...c, regions: [...c.regions, newRegion] };
+        return bumpWriterRecentActivity({ ...c, regions: [...c.regions, newRegion] }, 'evidence_change');
       }
       return c;
     }));
@@ -3058,7 +3305,9 @@ function CaseEditorPage({
         const maxW = maxPageWidth(L);
         const maxH = maxPageHeight(L);
 
+        let regionResizeDirty = false;
         const onMove = (ev: MouseEvent) => {
+          regionResizeDirty = true;
           const el = docViewerRef.current;
           if (!el) return;
           const pt = viewerContentPoint(el, ev.clientX, ev.clientY);
@@ -3146,6 +3395,11 @@ function CaseEditorPage({
         const onUp = () => {
           document.removeEventListener('mousemove', onMove);
           document.removeEventListener('mouseup', onUp);
+          if (regionResizeDirty) {
+            setCases(prev =>
+              prev.map(c => (c.id === caseId ? bumpWriterRecentActivity(c, 'evidence_change') : c)),
+            );
+          }
         };
 
         document.addEventListener('mousemove', onMove);
@@ -3162,7 +3416,9 @@ function CaseEditorPage({
       const R0 = cx0 + w0 / 2;
       const B0 = cy0 + h0 / 2;
 
+      let regionResizeDirtyLegacy = false;
       const onMoveLegacy = (ev: MouseEvent) => {
+        regionResizeDirtyLegacy = true;
         const el = docViewerRef.current;
         if (!el) return;
         const pt = viewerContentPoint(el, ev.clientX, ev.clientY);
@@ -3240,6 +3496,11 @@ function CaseEditorPage({
       const onUpLegacy = () => {
         document.removeEventListener('mousemove', onMoveLegacy);
         document.removeEventListener('mouseup', onUpLegacy);
+        if (regionResizeDirtyLegacy) {
+          setCases(prev =>
+            prev.map(c => (c.id === caseId ? bumpWriterRecentActivity(c, 'evidence_change') : c)),
+          );
+        }
       };
 
       document.addEventListener('mousemove', onMoveLegacy);
@@ -3309,6 +3570,10 @@ function CaseEditorPage({
           const moved = (ev.clientX - startCX) ** 2 + (ev.clientY - startCY) ** 2 > 36;
           if (!moved) {
             setSelectedRegion(cur => (cur === region.id ? null : region.id));
+          } else {
+            setCases(prev =>
+              prev.map(c => (c.id === caseId ? bumpWriterRecentActivity(c, 'evidence_change') : c)),
+            );
           }
         };
 
@@ -3350,6 +3615,10 @@ function CaseEditorPage({
         const moved = (ev.clientX - startCX) ** 2 + (ev.clientY - startCY) ** 2 > 36;
         if (!moved) {
           setSelectedRegion(cur => (cur === region.id ? null : region.id));
+        } else {
+          setCases(prev =>
+            prev.map(c => (c.id === caseId ? bumpWriterRecentActivity(c, 'evidence_change') : c)),
+          );
         }
       };
 
@@ -3366,29 +3635,32 @@ function CaseEditorPage({
       setCases(prev =>
         prev.map(c => {
           if (c.id !== caseId) return c;
-          return {
-            ...c,
-            regions: c.regions.map(r => {
-              if (r.id !== regionId) return r;
-              const widthPct =
-                patch.widthPct != null ? clampRegionDimension(patch.widthPct) : r.widthPct;
-              const heightPct =
-                patch.heightPct != null ? clampRegionDimension(patch.heightPct) : r.heightPct;
-              if (L) {
-                const base =
-                  r.pageNorm ?? percentsToPageNorm(r.x, r.y, r.widthPct, r.heightPct, L);
-                const pageNorm: RegionPageNorm = {
-                  cx: base.cx,
-                  cy: base.cy,
-                  w: ((widthPct / 100) * L.cw) / L.scale / L.pageW,
-                  h: ((heightPct / 100) * L.ch) / L.scale / L.pageH,
-                };
-                const d = pageNormToPercents(pageNorm, L);
-                return { ...r, x: d.x, y: d.y, widthPct, heightPct, pageNorm };
-              }
-              return { ...r, widthPct, heightPct };
-            }),
-          };
+          return bumpWriterRecentActivity(
+            {
+              ...c,
+              regions: c.regions.map(r => {
+                if (r.id !== regionId) return r;
+                const widthPct =
+                  patch.widthPct != null ? clampRegionDimension(patch.widthPct) : r.widthPct;
+                const heightPct =
+                  patch.heightPct != null ? clampRegionDimension(patch.heightPct) : r.heightPct;
+                if (L) {
+                  const base =
+                    r.pageNorm ?? percentsToPageNorm(r.x, r.y, r.widthPct, r.heightPct, L);
+                  const pageNorm: RegionPageNorm = {
+                    cx: base.cx,
+                    cy: base.cy,
+                    w: ((widthPct / 100) * L.cw) / L.scale / L.pageW,
+                    h: ((heightPct / 100) * L.ch) / L.scale / L.pageH,
+                  };
+                  const d = pageNormToPercents(pageNorm, L);
+                  return { ...r, x: d.x, y: d.y, widthPct, heightPct, pageNorm };
+                }
+                return { ...r, widthPct, heightPct };
+              }),
+            },
+            'evidence_change',
+          );
         }),
       );
     },
@@ -3400,10 +3672,13 @@ function CaseEditorPage({
     if (isWriterEditorLocked(cases, caseId)) return;
     setCases(prev => prev.map(c => {
       if (c.id === caseId) {
-        return {
-          ...c,
-          links: c.links.filter(l => l.field !== field),
-        };
+        return bumpWriterRecentActivity(
+          {
+            ...c,
+            links: c.links.filter(l => l.field !== field),
+          },
+          'evidence_change',
+        );
       }
       return c;
     }));
@@ -3414,11 +3689,14 @@ function CaseEditorPage({
     if (isWriterEditorLocked(cases, caseId)) return;
     setCases(prev => prev.map(c => {
       if (c.id === caseId) {
-        return {
-          ...c,
-          regions: c.regions.filter(r => r.id !== regionId),
-          links: c.links.filter(l => l.region !== regionId),
-        };
+        return bumpWriterRecentActivity(
+          {
+            ...c,
+            regions: c.regions.filter(r => r.id !== regionId),
+            links: c.links.filter(l => l.region !== regionId),
+          },
+          'evidence_change',
+        );
       }
       return c;
     }));
@@ -3545,7 +3823,7 @@ function CaseEditorPage({
             ],
           };
         }
-        return next;
+        return bumpWriterRecentActivity(next, 'submitted_review');
       }),
     );
     setNotifications(prev => [
@@ -3606,7 +3884,7 @@ function CaseEditorPage({
       }
       if (next === c) return prev;
       const out = [...prev];
-      out[idx] = next;
+      out[idx] = bumpWriterRecentActivity(next, 'evidence_change');
       return out;
     });
   }, [editorStaleFingerprint, caseId, setCases, currentCase]);
@@ -3637,10 +3915,13 @@ function CaseEditorPage({
     if (editorReadOnly) return;
     setCases(prev => prev.map(c => {
       if (c.id === caseId) {
-        return {
-          ...c,
-          fields: { ...c.fields, [field]: value }
-        };
+        return bumpWriterRecentActivity(
+          {
+            ...c,
+            fields: { ...c.fields, [field]: value },
+          },
+          'data_change',
+        );
       }
       return c;
     }));
@@ -3673,12 +3954,14 @@ function CaseEditorPage({
           docType: DEFAULT_WRITER_DOC_TYPE,
           dataUrl,
         };
-        setCases(prev => prev.map(c => {
-          if (c.id === caseId) {
-            return { ...c, docs: [...c.docs, newDoc] };
-          }
-          return c;
-        }));
+        setCases(prev =>
+          prev.map(c => {
+            if (c.id === caseId) {
+              return bumpWriterRecentActivity({ ...c, docs: [...c.docs, newDoc] }, 'evidence_change');
+            }
+            return c;
+          }),
+        );
         if (file === lastFileInBatch) {
           setActiveDocId(newId);
         }
@@ -3695,7 +3978,11 @@ function CaseEditorPage({
       const c = cases.find(x => x.id === caseId);
       if (!c?.docs.some(d => d.id === docId)) return;
       setCases(prev =>
-        prev.map(x => (x.id === caseId ? removeDocFromCase(x, docId) : x)),
+        prev.map(x =>
+          x.id === caseId
+            ? bumpWriterRecentActivity(removeDocFromCase(x, docId), 'evidence_change')
+            : x,
+        ),
       );
       setSelectedRegion(prev => {
         if (!prev) return null;
@@ -3783,12 +4070,17 @@ function CaseEditorPage({
       text: text.trim(),
       timestamp: new Date(),
     };
-    setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        return { ...c, comments: [...c.comments, newComment] };
-      }
-      return c;
-    }));
+    const row = cases.find(c => c.id === caseId);
+    if (!row) return;
+    const committedCase: Case = { ...row, comments: [...row.comments, newComment] };
+    setCases(prev => prev.map(c => (c.id === caseId ? committedCase : c)));
+    // Comments are sent immediately and should not flip “Not saved” or swallow real draft edits.
+    const b = editorBaselineRef.current;
+    if (b && b.id === committedCase.id) {
+      editorBaselineRef.current = cloneCaseDeep({ ...b, comments: committedCase.comments });
+    } else {
+      editorBaselineRef.current = cloneCaseDeep(committedCase);
+    }
     setNewCommentText('');
   };
 
@@ -3940,26 +4232,74 @@ function CaseEditorPage({
                 const pathD = generatePath(fieldPos, regionPos);
                 const midX = (fieldPos.x + regionPos.x) / 2;
                 const midY = (fieldPos.y + regionPos.y) / 2;
+                const showArrow = isLinkArrowVisibleForField(link.field);
 
                 return (
                   <g key={`${link.field}-${link.docId}-${link.region}`}>
-                    <path
-                      d={pathD}
-                      className={`link-line ${link.status === 'conflict' ? 'link-line-conflict' : ''}`}
-                      markerEnd={
-                        link.status === 'conflict' ? 'url(#arrowhead-conflict)' : 'url(#arrowhead-blue)'
-                      }
-                    />
-                    {/* Conflict marker */}
-                    {link.status === 'conflict' && (
-                      <g transform={`translate(${midX + 36}, ${midY})`}>
-                        <circle r="10" fill="#ef4444" />
+                    {showArrow ? (
+                      <>
                         <path
-                          d="M-4 -4 L4 4 M-4 4 L4 -4"
-                          stroke="white"
-                          strokeWidth="2"
-                          strokeLinecap="round"
+                          d={pathD}
+                          className={`link-line ${link.status === 'conflict' ? 'link-line-conflict' : ''}`}
+                          markerEnd={
+                            link.status === 'conflict' ? 'url(#arrowhead-conflict)' : 'url(#arrowhead-blue)'
+                          }
                         />
+                        {link.status === 'conflict' && (
+                          <g transform={`translate(${midX + 36}, ${midY})`}>
+                            <circle r="10" fill="#ef4444" />
+                            <path
+                              d="M-4 -4 L4 4 M-4 4 L4 -4"
+                              stroke="white"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                            />
+                          </g>
+                        )}
+                      </>
+                    ) : null}
+                    {!editorReadOnly && (
+                      <g
+                        className="link-label-group"
+                        transform={`translate(${fieldPos.x}, ${fieldPos.y})`}
+                        onPointerDown={ev => ev.stopPropagation()}
+                        onClick={ev => {
+                          ev.stopPropagation();
+                          removeLink(link.field);
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={ev => {
+                          if (ev.key === 'Enter' || ev.key === ' ') {
+                            ev.preventDefault();
+                            removeLink(link.field);
+                          }
+                        }}
+                        aria-label={`Remove evidence link for ${FIELD_LABELS[link.field]}`}
+                      >
+                        <g transform="translate(1.75, 0)">
+                          <g className="link-trash-scale">
+                            <circle r={11} className="link-unlink-chip-bg" />
+                            <svg
+                              className="link-unlink-trash-svg"
+                              x={-11}
+                              y={-11}
+                              width={22}
+                              height={22}
+                              viewBox="0 0 24 24"
+                              aria-hidden={true}
+                            >
+                              <g transform="translate(12, 12) scale(0.66) translate(-12, -12)">
+                                <g transform="translate(0.35, 0)">
+                                  <path
+                                    fill="currentColor"
+                                    d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zm13-14h-3.5l-1-1h-5l-1 1H5v2h14V4z"
+                                  />
+                                </g>
+                              </g>
+                            </svg>
+                          </g>
+                        </g>
                       </g>
                     )}
                   </g>
@@ -3967,7 +4307,7 @@ function CaseEditorPage({
               })}
 
               {/* Drag in progress arrow */}
-              {draggingField && dragPoint && (() => {
+              {draggingField && dragPoint && isLinkArrowVisibleForField(draggingField) && (() => {
                 const fieldPos = getFieldPosition(draggingField);
                 if (!fieldPos) return null;
                 const editorEl = editorRef.current;
@@ -4010,8 +4350,28 @@ function CaseEditorPage({
 
             {/* LEFT PANEL - DECLARANT */}
             <div className="editor-panel declarant-panel">
-              <div className="panel-header">
+              <div className="panel-header declarant-panel-header">
                 <h2 className="panel-title">DECLARANT</h2>
+                {currentCase.docs.length > 0 ? (
+                  <label
+                    className="editor-link-arrows-global"
+                    title={
+                      showAllLinkArrows
+                        ? 'Showing arrows for all linked fields (per-row eye can hide one). Turn off to hide all, then use each row’s eye to show only chosen fields.'
+                        : linkArrowVisibleSubset.size > 0
+                          ? 'Some link arrows are on. Click to hide all; click again to show all.'
+                          : 'Link arrows are hidden. Turn on to show all, or use a row’s eye to show that field only.'
+                    }
+                  >
+                    <input
+                      type="checkbox"
+                      checked={anyLinkArrowsShown}
+                      onChange={toggleGlobalLinkArrows}
+                      disabled={editorReadOnly}
+                    />
+                    <span>Show link arrows</span>
+                  </label>
+                ) : null}
               </div>
               <div className="panel-divider"></div>
               {!editorReadOnly &&
@@ -4095,6 +4455,50 @@ function CaseEditorPage({
                           ) : null}
                           {!editorReadOnly ? (
                             <div className="field-link-controls">
+                              {hasLink ? (
+                                <button
+                                  type="button"
+                                  className={
+                                    'editor-field-arrow-toggle' +
+                                    (isLinkArrowVisibleForField(field) ? '' : ' editor-field-arrow-toggle--off')
+                                  }
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    toggleFieldLinkArrow(field);
+                                  }}
+                                  title={
+                                    isLinkArrowVisibleForField(field)
+                                      ? 'Hide link arrow for this field'
+                                      : 'Show link arrow for this field'
+                                  }
+                                  aria-pressed={isLinkArrowVisibleForField(field)}
+                                  aria-label={`Toggle evidence link arrow for ${FIELD_LABELS[field]}`}
+                                >
+                                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                                    {isLinkArrowVisibleForField(field) ? (
+                                      <g className="editor-field-arrow-eye">
+                                        <path
+                                          d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
+                                          stroke="currentColor"
+                                          strokeWidth="2"
+                                          strokeLinejoin="round"
+                                        />
+                                        <circle cx="12" cy="12" r="2.75" fill="currentColor" />
+                                      </g>
+                                    ) : (
+                                      <g className="editor-field-arrow-eye editor-field-arrow-eye--muted" opacity={0.55}>
+                                        <path
+                                          d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
+                                          stroke="currentColor"
+                                          strokeWidth="2"
+                                          strokeLinejoin="round"
+                                        />
+                                        <circle cx="12" cy="12" r="2.75" stroke="currentColor" strokeWidth="1.75" fill="none" />
+                                      </g>
+                                    )}
+                                  </svg>
+                                </button>
+                              ) : null}
                               <div
                                 ref={(el) => {
                                   dragHandleRefs.current[field] = el;
@@ -4106,9 +4510,7 @@ function CaseEditorPage({
                                   e.preventDefault();
                                   if (handleSuppressClickRef.current) {
                                     handleSuppressClickRef.current = false;
-                                    return;
                                   }
-                                  if (!editorReadOnly && hasLink) removeLink(field);
                                 }}
                                 title="Drag to link evidence"
                                 aria-label={`Drag ${FIELD_LABELS[field]} to link evidence`}
@@ -4927,7 +5329,6 @@ function ReviewMatrixPage({
   const [returnComment, setReturnComment] = useState('');
   const [newCommentText, setNewCommentText] = useState('');
   const [editingFieldValue, setEditingFieldValue] = useState('');
-  const matrixSplitRef = useRef<HTMLDivElement>(null);
   const inspectionPreviewRef = useRef<HTMLDivElement>(null);
   const inspectionPdfLayoutRef = useRef<PdfPageLayoutInfo | null>(null);
   const [inspectionPdfLayout, setInspectionPdfLayout] = useState<PdfPageLayoutInfo | null>(null);
@@ -4941,12 +5342,7 @@ function ReviewMatrixPage({
   const matrixDirtyRef = useRef(false);
   const matrixPendingLeaveRef = useRef<'return' | 'back' | null>(null);
   const [matrixSidebarDocId, setMatrixSidebarDocId] = useState<string | null>(null);
-  const [matrixSplitPct, setMatrixSplitPct] = useState<number>(() => {
-    const raw = window.localStorage.getItem('port5176.review.splitPct');
-    const n = raw ? Number(raw) : NaN;
-    return Number.isFinite(n) ? Math.min(65, Math.max(25, n)) : 38;
-  });
-  const [matrixMobileTab, setMatrixMobileTab] = useState<'pdf' | 'review'>('review');
+  const [matrixDocsModalOpen, setMatrixDocsModalOpen] = useState(false);
   const [matrixAttachmentDeletePrompt, setMatrixAttachmentDeletePrompt] = useState<{
     docId: string;
     name: string;
@@ -4995,9 +5391,12 @@ function ReviewMatrixPage({
     if (Object.keys(flush).length === 0) {
       const normalized = normalizeWriterFacingKanbanStatus(c0);
       if (normalized !== c0) {
-        setCases(prev => prev.map(c => (c.id === caseId ? normalized : c)));
+        const bumped = bumpWriterRecentActivity(normalized, 'matrix_update');
+        setCases(prev => prev.map(c => (c.id === caseId ? bumped : c)));
+        setMatrixSavedSnapshot(cloneCaseDeep(bumped));
+      } else {
+        setMatrixSavedSnapshot(cloneCaseDeep(normalized));
       }
-      setMatrixSavedSnapshot(cloneCaseDeep(normalized));
       setInspectingCell(null);
       return;
     }
@@ -5006,7 +5405,10 @@ function ReviewMatrixPage({
       const next = prev.map(c => {
         if (c.id !== caseId) return c;
         const withFields = { ...c, fields: { ...c.fields, ...flush } };
-        merged = normalizeWriterFacingKanbanStatus(withFields);
+        merged = bumpWriterRecentActivity(
+          normalizeWriterFacingKanbanStatus(withFields),
+          'data_change',
+        );
         return merged;
       });
       return next;
@@ -5188,7 +5590,7 @@ function ReviewMatrixPage({
       }
       if (next === row) return prev;
       const out = [...prev];
-      out[idx] = next;
+      out[idx] = bumpWriterRecentActivity(next, 'evidence_change');
       return out;
     });
   }, [matrixKanbanEvidenceFingerprint, caseId, setCases]);
@@ -5251,39 +5653,8 @@ function ReviewMatrixPage({
     const ev = resolveEvidenceForInspection(merged, field, docId);
     if (ev?.doc?.id) {
       setMatrixSidebarDocId(ev.doc.id);
-      setMatrixMobileTab('pdf');
-    } else {
-      setMatrixMobileTab('review');
     }
   };
-
-  const onMatrixSplitPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    const root = matrixSplitRef.current;
-    if (!root) return;
-    e.preventDefault();
-    const target = e.currentTarget;
-    target.setPointerCapture(e.pointerId);
-    const startX = e.clientX;
-    const startPct = matrixSplitPct;
-    const totalW = root.getBoundingClientRect().width;
-    const onMove = (ev: PointerEvent) => {
-      const pctDelta = ((ev.clientX - startX) / totalW) * 100;
-      const next = Math.min(65, Math.max(25, startPct + pctDelta));
-      setMatrixSplitPct(next);
-    };
-    const onUp = () => {
-      target.removeEventListener('pointermove', onMove);
-      target.removeEventListener('pointerup', onUp);
-      target.removeEventListener('lostpointercapture', onUp);
-    };
-    target.addEventListener('pointermove', onMove);
-    target.addEventListener('pointerup', onUp);
-    target.addEventListener('lostpointercapture', onUp);
-  }, [matrixSplitPct]);
-
-  useEffect(() => {
-    window.localStorage.setItem('port5176.review.splitPct', String(matrixSplitPct));
-  }, [matrixSplitPct]);
 
   const activePdfDoc = currentCase?.docs.find(d => d.id === matrixSidebarDocId) ?? null;
 
@@ -5295,12 +5666,17 @@ function ReviewMatrixPage({
       text: text.trim(),
       timestamp: new Date(),
     };
+    let committedCase: Case | null = null;
     setCases(prev => prev.map(c => {
       if (c.id === caseId) {
-        return { ...c, comments: [...c.comments, newComment] };
+        const next = { ...c, comments: [...c.comments, newComment] };
+        committedCase = next;
+        return next;
       }
       return c;
     }));
+    // Comments are sent immediately and should not be part of unsaved-draft gating.
+    if (committedCase) setMatrixSavedSnapshot(cloneCaseDeep(committedCase));
     setNewCommentText('');
   };
 
@@ -5324,7 +5700,11 @@ function ReviewMatrixPage({
           dataUrl,
         };
         setCases(prev =>
-          prev.map(c => (c.id === caseId ? { ...c, docs: [...c.docs, newDoc] } : c)),
+          prev.map(c =>
+            c.id === caseId
+              ? bumpWriterRecentActivity({ ...c, docs: [...c.docs, newDoc] }, 'evidence_change')
+              : c,
+          ),
         );
         if (file === lastFileInBatch) {
           setMatrixSidebarDocId(newId);
@@ -5341,7 +5721,11 @@ function ReviewMatrixPage({
       const c = cases.find(x => x.id === caseId);
       if (!c?.docs.some(d => d.id === docId)) return;
       setCases(prev =>
-        prev.map(x => (x.id === caseId ? removeDocFromCase(x, docId) : x)),
+        prev.map(x =>
+          x.id === caseId
+            ? bumpWriterRecentActivity(removeDocFromCase(x, docId), 'evidence_change')
+            : x,
+        ),
       );
       setInspectingCell(prev => (prev?.docId === docId ? null : prev));
       setMatrixSidebarDocId(prev => {
@@ -5419,11 +5803,14 @@ function ReviewMatrixPage({
         text: `[RETURNED] ${returnComment.trim()}`,
         timestamp: new Date(),
       } : null;
-      return {
-        ...merged,
-        status: 'returned' as CaseStatus,
-        comments: returnCommentObj ? [...merged.comments, returnCommentObj] : merged.comments,
-      };
+      return bumpWriterRecentActivity(
+        {
+          ...merged,
+          status: 'returned' as CaseStatus,
+          comments: returnCommentObj ? [...merged.comments, returnCommentObj] : merged.comments,
+        },
+        'returned',
+      );
     }));
     setMatrixPendingFields({});
     setInspectingCell(null);
@@ -5452,8 +5839,11 @@ function ReviewMatrixPage({
     setCases(prev => prev.map(c => {
       if (c.id !== caseId) return c;
       const merged = { ...c, fields: { ...c.fields, ...fieldFlush } };
-      if (isCeo) return { ...merged, status: newStatus };
-      return { ...merged, status: newStatus, passedLeadReviewBeforeCeo: true };
+      if (isCeo) return bumpWriterRecentActivity({ ...merged, status: newStatus }, 'customs_completed');
+      return bumpWriterRecentActivity(
+        { ...merged, status: newStatus, passedLeadReviewBeforeCeo: true },
+        'review_advance',
+      );
     }));
     setMatrixPendingFields({});
     setInspectingCell(null);
@@ -5523,7 +5913,7 @@ function ReviewMatrixPage({
         const i = list.indexOf(key);
         if (i >= 0) list.splice(i, 1);
         else list.push(key);
-        return { ...c, matrixManualConflicts: list };
+        return bumpWriterRecentActivity({ ...c, matrixManualConflicts: list }, 'matrix_update');
       }),
     );
   };
@@ -5633,178 +6023,8 @@ function ReviewMatrixPage({
         )}
 
         <main className="matrix-main">
-          <div className="matrix-split-tabs" role="tablist" aria-label="Review layout">
-            <button
-              type="button"
-              role="tab"
-              id="matrix-tab-review"
-              aria-controls="matrix-panel-review"
-              aria-selected={matrixMobileTab === 'review'}
-              className={`matrix-split-tab${matrixMobileTab === 'review' ? ' matrix-split-tab--active' : ''}`}
-              onClick={() => setMatrixMobileTab('review')}
-            >
-              Matrix
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id="matrix-tab-pdf"
-              aria-controls="matrix-panel-pdf"
-              aria-selected={matrixMobileTab === 'pdf'}
-              className={`matrix-split-tab${matrixMobileTab === 'pdf' ? ' matrix-split-tab--active' : ''}`}
-              onClick={() => setMatrixMobileTab('pdf')}
-            >
-              PDF
-            </button>
-          </div>
-
-          <div
-            className={`matrix-layout matrix-layout--pdf-split ${matrixMobileTab === 'pdf' ? 'matrix-layout--show-pdf' : 'matrix-layout--show-review'}`}
-            ref={matrixSplitRef}
-            style={{ ['--matrixPdfPct' as unknown as string]: `${matrixSplitPct}%` } as React.CSSProperties}
-          >
-            <section
-              id="matrix-panel-pdf"
-              role="tabpanel"
-              aria-labelledby="matrix-tab-pdf"
-              aria-label="PDF viewer"
-              className="matrix-pdf-pane"
-            >
-              <div className="matrix-pdf-toolbar">
-                <div className="matrix-pdf-toolbar-left">
-                  <span className="matrix-pdf-toolbar-title">Document</span>
-                  {currentCase.docs.length > 0 && (
-                    <span className="matrix-pdf-toolbar-docname" title={activePdfDoc?.name ?? undefined}>
-                      {activePdfDoc?.name}
-                    </span>
-                  )}
-                </div>
-                <div className="matrix-pdf-toolbar-right">
-                  <label
-                    className={`btn btn-primary btn-sm matrix-pdf-add-files${matrixReadOnly ? ' matrix-control-disabled' : ''}`}
-                    title={
-                      matrixReadOnly
-                        ? 'Read-only: submitted to customs'
-                        : `Add files (max ${MAX_DOCUMENTS_PER_CASE} per case)`
-                    }
-                    aria-disabled={matrixReadOnly}
-                  >
-                    + Add files
-                    <input
-                      type="file"
-                      multiple
-                      accept=".pdf,.png,.jpg,.jpeg"
-                      disabled={matrixReadOnly}
-                      onChange={handleMatrixFileUpload}
-                      style={{ display: 'none' }}
-                    />
-                  </label>
-                </div>
-              </div>
-
-              <div className="matrix-pdf-tabs-row" aria-label="Case attachments">
-                {currentCase.docs.length === 0 ? (
-                  <span className="matrix-pdf-empty">No files attached.</span>
-                ) : (
-                  <>
-                    <div className="matrix-doc-tabs">
-                      {currentCase.docs.map(doc => (
-                        <div
-                          key={doc.id}
-                          className={`matrix-doc-tab-item${matrixSidebarDocId === doc.id ? ' matrix-doc-tab-item--active' : ''}`}
-                          role="none"
-                        >
-                          <button
-                            type="button"
-                            aria-current={matrixSidebarDocId === doc.id ? 'true' : undefined}
-                            className="matrix-doc-tab"
-                            onClick={() => {
-                              setMatrixSidebarDocId(doc.id);
-                              setMatrixMobileTab('pdf');
-                            }}
-                            title={doc.name}
-                          >
-                            {truncateTabLabel(doc.name, 18)}
-                          </button>
-                          {!matrixReadOnly && (
-                            <button
-                              type="button"
-                              className="matrix-doc-tab-close"
-                              aria-label={`Remove ${doc.name}`}
-                              title="Remove file"
-                              onClick={e => {
-                                e.stopPropagation();
-                                requestMatrixRemoveDocument(doc.id);
-                              }}
-                            >
-                              <span aria-hidden>×</span>
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <div className="matrix-pdf-view">
-                {(() => {
-                  const doc = activePdfDoc;
-                  if (!doc) {
-                    return (
-                      <div className="matrix-pdf-placeholder">
-                        <p className="subtitle">Select a linked cell to jump to its document, or add an attachment.</p>
-                      </div>
-                    );
-                  }
-                  const isPdf = doc.dataUrl.startsWith('data:application/pdf');
-                  return (
-                    <div className="matrix-pdf-shell">
-                      {isPdf ? (
-                        <PdfJsPreview
-                          dataUrl={doc.dataUrl}
-                          className="matrix-pdf-js"
-                          fitMode="fitWidth"
-                        />
-                      ) : (
-                        <div className="matrix-pdf-image-wrap">
-                          <img src={doc.dataUrl} alt="" className="matrix-pdf-img" />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-            </section>
-
-            <div
-              className="matrix-split-divider"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize PDF pane"
-              aria-valuenow={Math.round(matrixSplitPct)}
-              aria-valuemin={25}
-              aria-valuemax={65}
-              onPointerDown={onMatrixSplitPointerDown}
-              onKeyDown={(e) => {
-                const step = e.shiftKey ? 5 : 1;
-                if (e.key === 'ArrowLeft') {
-                  e.preventDefault();
-                  setMatrixSplitPct(p => Math.max(25, p - step));
-                } else if (e.key === 'ArrowRight') {
-                  e.preventDefault();
-                  setMatrixSplitPct(p => Math.min(65, p + step));
-                }
-              }}
-              tabIndex={0}
-            />
-
-            <div
-              id="matrix-panel-review"
-              role="tabpanel"
-              aria-labelledby="matrix-tab-review"
-              className="matrix-review-pane"
-            >
+          <div className="matrix-layout matrix-layout--full">
+            <div className="matrix-review-pane">
               {/* LEFT: Matrix Table */}
               <div className="matrix-panel">
                 <div className="matrix-table-wrap">
@@ -5923,6 +6143,32 @@ function ReviewMatrixPage({
                     <span className="status-stat-value">{staleCount}</span>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  className="btn btn-outline matrix-view-docs-btn"
+                  onClick={() => setMatrixDocsModalOpen(true)}
+                >
+                  View documents ({currentCase.docs.length})
+                </button>
+                <label
+                  className={`btn btn-primary matrix-add-docs-btn${matrixReadOnly ? ' matrix-control-disabled' : ''}`}
+                  title={
+                    matrixReadOnly
+                      ? 'Read-only: submitted to customs'
+                      : `Add files (max ${MAX_DOCUMENTS_PER_CASE} per case)`
+                  }
+                  aria-disabled={matrixReadOnly}
+                >
+                  + Add documents
+                  <input
+                    type="file"
+                    multiple
+                    accept=".pdf,.png,.jpg,.jpeg"
+                    disabled={matrixReadOnly}
+                    onChange={handleMatrixFileUpload}
+                    style={{ display: 'none' }}
+                  />
+                </label>
               <div className="matrix-sidebar-bottom">
                 <div className="matrix-comments-box">
                   <div className="comments-header">
@@ -6015,6 +6261,114 @@ function ReviewMatrixPage({
           </div>
         </main>
       </div>
+
+      {matrixDocsModalOpen && (
+        <div className="modal-overlay" onClick={() => setMatrixDocsModalOpen(false)}>
+          <div className="matrix-docs-modal" onClick={e => e.stopPropagation()}>
+            <div className="matrix-docs-modal-header">
+              <h3 className="matrix-docs-modal-title">Documents</h3>
+              <button
+                type="button"
+                className="inspection-close"
+                onClick={() => setMatrixDocsModalOpen(false)}
+                aria-label="Close documents"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="matrix-pdf-tabs-row" aria-label="Case attachments">
+              <div className="matrix-doc-tabs-strip">
+                {currentCase.docs.length === 0 ? (
+                  <span className="matrix-pdf-empty">No files attached.</span>
+                ) : (
+                  <div className="matrix-doc-tabs">
+                    {currentCase.docs.map(doc => (
+                      <div
+                        key={doc.id}
+                        className={`matrix-doc-tab-item${matrixSidebarDocId === doc.id ? ' matrix-doc-tab-item--active' : ''}`}
+                        role="none"
+                      >
+                        <button
+                          type="button"
+                          aria-current={matrixSidebarDocId === doc.id ? 'true' : undefined}
+                          className="matrix-doc-tab"
+                          onClick={() => setMatrixSidebarDocId(doc.id)}
+                          title={doc.name}
+                        >
+                          {truncateTabLabel(doc.name, 20)}
+                        </button>
+                        {!matrixReadOnly && (
+                          <button
+                            type="button"
+                            className="matrix-doc-tab-close"
+                            aria-label={`Remove ${doc.name}`}
+                            title="Remove file"
+                            onClick={e => {
+                              e.stopPropagation();
+                              requestMatrixRemoveDocument(doc.id);
+                            }}
+                          >
+                            <span aria-hidden>×</span>
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <label
+                  className={`matrix-doc-tab-add${matrixReadOnly ? ' matrix-control-disabled' : ''}`}
+                  title={
+                    matrixReadOnly
+                      ? 'Read-only: submitted to customs'
+                      : `Add files (max ${MAX_DOCUMENTS_PER_CASE} per case)`
+                  }
+                  aria-disabled={matrixReadOnly}
+                >
+                  +
+                  <input
+                    type="file"
+                    multiple
+                    accept=".pdf,.png,.jpg,.jpeg"
+                    disabled={matrixReadOnly}
+                    onChange={handleMatrixFileUpload}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="matrix-pdf-view matrix-docs-modal-view">
+              {(() => {
+                const doc = activePdfDoc;
+                if (!doc) {
+                  return (
+                    <div className="matrix-pdf-placeholder">
+                      <p className="subtitle">Add an attachment or select a linked cell to jump to its document.</p>
+                    </div>
+                  );
+                }
+                const isPdf = doc.dataUrl.startsWith('data:application/pdf');
+                return (
+                  <div className="matrix-pdf-shell matrix-docs-modal-shell">
+                    {isPdf ? (
+                      <PdfJsPreview
+                        dataUrl={doc.dataUrl}
+                        className="matrix-pdf-js"
+                        fitMode="fitWidth"
+                      />
+                    ) : (
+                      <div className="matrix-pdf-image-wrap">
+                        <img src={doc.dataUrl} alt="" className="matrix-pdf-img" />
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Field Inspection Popup — view value + evidence; edit only when not submitted to customs */}
       {inspectingCell && (
