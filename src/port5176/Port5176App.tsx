@@ -91,7 +91,9 @@ function NotificationFlyout({
   notifications,
   setNotifications,
 }: NotificationFlyoutProps) {
-  const myNotifications = notifications.filter(n => notificationVisibleToUser(n, user));
+  const myNotifications = notifications
+    .filter(n => notificationVisibleToUser(n, user))
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
   const dismissOne = (id: string) => {
     setNotifications(prev => prev.filter(n => n.id !== id));
@@ -2256,14 +2258,16 @@ function DashboardPage({
       });
   };
 
-  // Render completed column (CEO: submitted-to-customs toggle only for true completed; lead: plain cards)
+  // Render completed column (CEO-style layout for CEO + lead reviewer)
   const renderCompletedColumn = () => {
     const laneCases = casesInCompletedColumn();
     const customsCompleted = filterCases('completed');
     const submittedToCustomsCount = customsCompleted.length;
     const isCeo = user.role === 'ceo';
+    const isLeadReviewer = user.role === 'lead_reviewer';
+    const waitingForCeo = laneCases.filter(c => c.status === 'ceo_review');
 
-    if (!isCeo) {
+    if (!isCeo && !isLeadReviewer) {
       return (
         <div className="kanban-column">
           <div className="kanban-col-header kanban-col-completed">
@@ -2279,49 +2283,18 @@ function DashboardPage({
       );
     }
 
-    const pendingCeo = laneCases.filter(c => c.status === 'ceo_review');
-
     return (
       <div className="kanban-column">
         <div className="kanban-col-header kanban-col-completed">
           {STATUS_LANES.find(l => l.status === 'completed')!.label}
         </div>
-        {pendingCeo.length === 0 && customsCompleted.length === 0 ? (
+        {waitingForCeo.length === 0 && customsCompleted.length === 0 ? (
           <div className="kanban-empty-col">No completed cases</div>
         ) : (
           <div className="kanban-column-scroll">
-            {pendingCeo.map(c => renderKanbanCard(c))}
+            {waitingForCeo.map(c => renderKanbanCard(c))}
             {customsCompleted.length > 0 && (
               <>
-                {/* Preview card only while history is collapsed (avoids duplicating row when expanded). */}
-                {!showCompletedHistory &&
-                  customsCompleted.slice(0, 1).map(c => {
-                    const filledFields = getFilledFieldsCount(c);
-                    return (
-                      <div
-                        key={c.id}
-                        className="kanban-card kanban-card-completed"
-                        onClick={() => onOpenCase(c.id)}
-                      >
-                        <div className="kanban-card-header">
-                          <span className="kanban-card-title">
-                            {c.title.length > 15 ? c.title.slice(0, 15) + '...' : c.title}
-                          </span>
-                        </div>
-                        <div className="kanban-card-author">by {c.createdBy}</div>
-                          <div className="kanban-card-bullets">
-                          <div className="kanban-bullet">
-                            <span className="kanban-bullet-dot kanban-bullet-dot--status-warn"></span>
-                            <span>Fields {filledFields}/10</span>
-                          </div>
-                          <div className="kanban-bullet kanban-bullet-green">
-                            <span className="kanban-bullet-dot kanban-bullet-dot--status-ok"></span>
-                            <span>Everything correct</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
                 <button
                   type="button"
                   className="kanban-submitted-btn"
