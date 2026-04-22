@@ -847,8 +847,9 @@ function mergePendingMatrixFields(
 }
 
 /**
- * Fingerprint for “unsaved edits” in the case editor: omits `status` so automatic
- * drafting ↔ missing_ev kanban moves (evidence matrix rules) do not flip the Not saved hint.
+ * Fingerprint for “unsaved edits” in the case editor:
+ * - omits `status` so automatic drafting ↔ missing_ev moves do not flip "Not saved"
+ * - omits `comments` because comments are sent instantly and can arrive live from another tab/user
  */
 function caseEditorDraftDirtyFingerprint(c: Case): string {
   return JSON.stringify({
@@ -871,11 +872,6 @@ function caseEditorDraftDirtyFingerprint(c: Case): string {
       widthPct: r.widthPct,
       heightPct: r.heightPct,
       pageNorm: r.pageNorm,
-    })),
-    comments: c.comments.map(cm => ({
-      author: cm.author,
-      text: cm.text,
-      t: cm.timestamp instanceof Date ? cm.timestamp.getTime() : new Date(cm.timestamp).getTime(),
     })),
     mm: [...(c.matrixManualConflicts ?? [])].slice().sort(),
   });
@@ -4279,8 +4275,8 @@ function CaseEditorPage({
                 );
               })}
 
-              {/* Drag in progress arrow */}
-              {draggingField && dragPoint && isLinkArrowVisibleForField(draggingField) && (() => {
+              {/* Drag preview stays visible even when persistent arrows are hidden. */}
+              {draggingField && dragPoint && (() => {
                 const fieldPos = getFieldPosition(draggingField);
                 if (!fieldPos) return null;
                 const editorEl = editorRef.current;
