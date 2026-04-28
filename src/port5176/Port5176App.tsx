@@ -4336,7 +4336,6 @@ function CaseEditorPage({
                       type="checkbox"
                       checked={anyLinkArrowsShown}
                       onChange={toggleGlobalLinkArrows}
-                      disabled={editorReadOnly}
                     />
                     <span>Show link arrows</span>
                   </label>
@@ -4422,52 +4421,52 @@ function CaseEditorPage({
                               </svg>
                             </button>
                           ) : null}
-                          {!editorReadOnly ? (
-                            <div className="field-link-controls">
-                              {hasLink ? (
-                                <button
-                                  type="button"
-                                  className={
-                                    'editor-field-arrow-toggle' +
-                                    (isLinkArrowVisibleForField(field) ? '' : ' editor-field-arrow-toggle--off')
-                                  }
-                                  onClick={e => {
-                                    e.stopPropagation();
-                                    toggleFieldLinkArrow(field);
-                                  }}
-                                  title={
-                                    isLinkArrowVisibleForField(field)
-                                      ? 'Hide link arrow for this field'
-                                      : 'Show link arrow for this field'
-                                  }
-                                  aria-pressed={isLinkArrowVisibleForField(field)}
-                                  aria-label={`Toggle evidence link arrow for ${FIELD_LABELS[field]}`}
-                                >
-                                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-                                    {isLinkArrowVisibleForField(field) ? (
-                                      <g className="editor-field-arrow-eye">
-                                        <path
-                                          d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
-                                          stroke="currentColor"
-                                          strokeWidth="2"
-                                          strokeLinejoin="round"
-                                        />
-                                        <circle cx="12" cy="12" r="2.75" fill="currentColor" />
-                                      </g>
-                                    ) : (
-                                      <g className="editor-field-arrow-eye editor-field-arrow-eye--muted" opacity={0.55}>
-                                        <path
-                                          d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
-                                          stroke="currentColor"
-                                          strokeWidth="2"
-                                          strokeLinejoin="round"
-                                        />
-                                        <circle cx="12" cy="12" r="2.75" stroke="currentColor" strokeWidth="1.75" fill="none" />
-                                      </g>
-                                    )}
-                                  </svg>
-                                </button>
-                              ) : null}
+                          <div className="field-link-controls">
+                            {hasLink ? (
+                              <button
+                                type="button"
+                                className={
+                                  'editor-field-arrow-toggle' +
+                                  (isLinkArrowVisibleForField(field) ? '' : ' editor-field-arrow-toggle--off')
+                                }
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  toggleFieldLinkArrow(field);
+                                }}
+                                title={
+                                  isLinkArrowVisibleForField(field)
+                                    ? 'Hide link arrow for this field'
+                                    : 'Show link arrow for this field'
+                                }
+                                aria-pressed={isLinkArrowVisibleForField(field)}
+                                aria-label={`Toggle evidence link arrow for ${FIELD_LABELS[field]}`}
+                              >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                                  {isLinkArrowVisibleForField(field) ? (
+                                    <g className="editor-field-arrow-eye">
+                                      <path
+                                        d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinejoin="round"
+                                      />
+                                      <circle cx="12" cy="12" r="2.75" fill="currentColor" />
+                                    </g>
+                                  ) : (
+                                    <g className="editor-field-arrow-eye editor-field-arrow-eye--muted" opacity={0.55}>
+                                      <path
+                                        d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinejoin="round"
+                                      />
+                                      <circle cx="12" cy="12" r="2.75" stroke="currentColor" strokeWidth="1.75" fill="none" />
+                                    </g>
+                                  )}
+                                </svg>
+                              </button>
+                            ) : null}
+                            {!editorReadOnly && (
                               <div
                                 ref={(el) => {
                                   dragHandleRefs.current[field] = el;
@@ -4488,8 +4487,8 @@ function CaseEditorPage({
                                   <span className="drag-grip" aria-hidden={true}></span>
                                 </span>
                               </div>
-                            </div>
-                          ) : null}
+                            )}
+                          </div>
                         </div>
                       )}
                       {idx < Object.keys(FIELD_LABELS).length - 1 && <div className="field-separator"></div>}
