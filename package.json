@@ -1,7 +1,7 @@
 {
   "name": "hw5",
   "version": "1.0.0",
-  "description": "",
+  "description": "Customs Case Manager - CIS 4120 writer/reviewer/CEO declaration review prototype",
   "main": "index.js",
   "scripts": {
     "dev": "vite --port 5176 --strictPort",
@@ -11,8 +11,15 @@
     "preview": "vite preview",
     "lint": "eslint ."
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "cis4120",
+    "react",
+    "typescript",
+    "vite",
+    "customs",
+    "prototype"
+  ],
+  "author": "Can Duru (https://canduru.net)",
   "license": "ISC",
   "type": "module",
   "dependencies": {
