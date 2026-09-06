@@ -7,7 +7,14 @@ dist/
 
 # Environment
 .env
+.env.local
 .env.*.local
+
+# Secrets / credentials
+*.pem
+*.key
+*.p12
+*.pfx
 
 # Logs & debug
 npm-debug.log*
@@ -26,6 +33,12 @@ Thumbs.db
 
 # Test / coverage
 coverage/
+
+# Python tooling (scripts/generate_seed.py)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
 
 # Vite
 .vite/
