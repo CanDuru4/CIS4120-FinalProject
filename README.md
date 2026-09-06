@@ -55,6 +55,23 @@ npm run preview
 
 Other scripts: `npm run lint`, `npm run generate-sample-pdfs` (optional PDF tooling).
 
+## Security & dependencies
+
+All 22 open Dependabot alerts were patched directly on `main` (the Dependabot PR was not merged):
+
+| Package | Was | Now | Reason |
+| --- | --- | --- | --- |
+| `react-router` / `react-router-dom` | 7.13.2 | 7.18.3 | direct bump of `react-router-dom` to `^7.18.2` |
+| `vite` | 8.0.8 | 8.2.2 | direct bump to `^8.0.16` |
+| `postcss` | 8.5.8 | 8.5.28 | `overrides` |
+| `nanoid` | 3.3.11 | 3.3.18 | `overrides` |
+| `js-yaml` | 4.1.1 | 4.3.2 | `overrides` |
+| `brace-expansion` | 5.0.5 / 1.1.13 | 5.0.9 / 1.1.18 | `overrides` (v1 line pinned under `minimatch@^3`) |
+| `@babel/core` | 7.29.0 | 7.29.7 | `overrides` |
+| `@humanfs/node` | 0.16.7 | 0.16.8 | `overrides` |
+
+Transitive packages are pinned with npm [`overrides`](https://docs.npmjs.com/cli/v11/configuring-npm/package-json#overrides) in `package.json`. `npm audit` reports **0 vulnerabilities**; `npm run build` and `npm run lint` pass.
+
 ## AI usage attribution
 
 - Portions of this repository were developed with AI coding assistance (including code generation, refactoring suggestions, bug-fix drafts, and documentation edits).
