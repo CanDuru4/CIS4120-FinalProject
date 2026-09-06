@@ -18,6 +18,18 @@ updates:
       include: scope
     labels:
       - dependencies
+    ignore:
+      # TypeScript 7 is held back by typescript-eslint, not by this app's code.
+      # typescript-eslint 8.69.0 (latest) declares
+      # peerDependencies.typescript ">=4.8.4 <6.1.0" and its entrypoint throws
+      # "typescript-eslint does not support TS 7.0." at import time, so
+      # `npm run lint` hard-fails under TypeScript 7 even though `tsc -b` and
+      # `vite build` both pass. Upstream tracking issue:
+      # https://github.com/typescript-eslint/typescript-eslint/issues/10940
+      # Remove this entry once a typescript-eslint release accepts TS >= 7.
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
     groups:
       production-dependencies:
         dependency-type: production

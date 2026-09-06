@@ -5,7 +5,7 @@
 [![React 19](https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white)](https://react.dev)
 [![TypeScript 6](https://img.shields.io/badge/TypeScript-6-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Vite 8](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)](https://vite.dev)
-[![pdf.js 5.x](https://img.shields.io/badge/pdf.js-5.x-ff6f00?logo=mozilla&logoColor=white)](https://mozilla.github.io/pdf.js/)
+[![pdf.js 6.x](https://img.shields.io/badge/pdf.js-6.x-ff6f00?logo=mozilla&logoColor=white)](https://mozilla.github.io/pdf.js/)
 
 React/TypeScript/Vite single-page app for **CIS 4120** (writer → reviewer → CEO workflow). This repo tracks the **port 5176** build only.
 
@@ -30,10 +30,10 @@ Customs Case Manager is a browser-only prototype of the paperwork loop a customs
 | UI | React 19, React Router 7 (`BrowserRouter`) |
 | Language | TypeScript 6 (`strict`) |
 | Build / dev server | Vite 8 (`@vitejs/plugin-react`) |
-| Document rendering | `pdfjs-dist` 5.x (writer preview, matrix inspection) |
+| Document rendering | `pdfjs-dist` 6.x (writer preview, matrix inspection) |
 | Document generation | `pdf-lib` (sample PDF script) |
 | Styling | Hand-written CSS with `:root` design tokens |
-| Linting | ESLint 9 (flat config) + `typescript-eslint` + `eslint-plugin-react-hooks` |
+| Linting | ESLint 10 (flat config) + `typescript-eslint` + `eslint-plugin-react-hooks` |
 | Storage | Browser `localStorage` + `BroadcastChannel` (no backend) |
 
 ## Getting started
@@ -122,6 +122,14 @@ Transitive packages are pinned with npm [`overrides`](https://docs.npmjs.com/cli
 ## Automation
 
 [`.github/dependabot.yml`](.github/dependabot.yml) runs a weekly npm check and groups production, development and major updates so the repo receives a handful of pull requests instead of one per transitive bump. There are no GitHub Actions workflows and no deployment target — the app is served from `npm run dev` or from the static `dist/` output of `npm run build`.
+
+### Held-back majors
+
+| Package | Pinned at | Why |
+| --- | --- | --- |
+| `typescript` | `^6.0.2` | `typescript-eslint` 8.69.0 (latest) declares `peerDependencies.typescript: ">=4.8.4 <6.1.0"` and throws `typescript-eslint does not support TS 7.0.` at import time, so `npm run lint` hard-fails on TypeScript 7 — `tsc -b` and `vite build` themselves pass. Tracked upstream at [typescript-eslint#10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940). |
+
+The TypeScript major is suppressed with an `ignore` entry in `.github/dependabot.yml`; remove it once typescript-eslint ships TS 7 support.
 
 ## AI usage attribution
 
