@@ -14,8 +14,8 @@ Stack: React 19, React Router 7, TypeScript 6 (`strict`), Vite 8, `pdfjs-dist` 6
 - `src/port5176/seedData.ts`: the demo users and cases, with the demo PDFs inlined as base64 `data:` URLs.
 - `src/styles/global.css`: base resets.
 - `public/favicon/`: favicons and the web manifest.
-- `docs/DEPENDENCIES.md`: the security pass, Dependabot setup and held-back majors.
-- `.github/dependabot.yml`: weekly grouped npm updates. There are no Actions workflows.
+- `docs/DEPENDENCIES.md`: the security pass and held-back majors.
+- There is no `.github/` directory: no Actions workflows and no Dependabot version-update config.
 
 ## Commands
 
@@ -46,7 +46,7 @@ There is no test suite and no deploy target. The app is served from `npm run dev
 - `seedData.ts` says "auto-generated", but its generators (`scripts/generate_seed.py`, `scripts/generateSamplePdfs.js`) and `sample_pdfs/` were deleted in commit `af74a07`. Edit `seedData.ts` by hand. The leftover `scripts/**` ignore in `eslint.config.js` and the Python entries in `.gitignore` refer to those removed files.
 - `pdf-lib` is listed in `dependencies`, but nothing in `src/` imports it.
 - The `package.json` `name` is still `hw5`, and the license there is `ISC`. There is no `LICENSE` file.
-- TypeScript is held at 6.x on purpose: `typescript-eslint` 8.x rejects TS 7 and `npm run lint` fails. `dependabot.yml` ignores the TS major. See `docs/DEPENDENCIES.md` before bumping it.
+- TypeScript is held at 6.x on purpose: `typescript-eslint` 8.x rejects TS 7 and `npm run lint` fails. See `docs/DEPENDENCIES.md` before bumping it.
 - `eslint.config.js` deliberately turns off `react-hooks/refs` and `react-hooks/set-state-in-effect`, because the app relies on ref baselines and layout-effect hydration. Keep them off.
 - Transitive security pins live in `package.json` `overrides`. Keep them when you bump dependencies.
 - Read-only UI state depends on role and status: `caseIsReadOnlyForWriterStatus` and `caseIsReadOnlyForMatrixUser`. Check both when you add editable controls.
