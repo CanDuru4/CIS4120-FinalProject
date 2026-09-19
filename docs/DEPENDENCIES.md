@@ -1,6 +1,6 @@
 # Dependencies and maintenance
 
-Moved out of the README. Covers the 2026-09-06 security pass, Dependabot automation and held-back majors.
+Moved out of the README. Covers the 2026-09-06 security pass, maintenance and held-back majors.
 
 ## Security pass
 
@@ -19,9 +19,9 @@ All 22 open Dependabot alerts were patched directly on `main` (the Dependabot PR
 
 Transitive packages are pinned with npm [`overrides`](https://docs.npmjs.com/cli/v11/configuring-npm/package-json#overrides) in `package.json`. At the time of the pass, `npm audit` reported 0 vulnerabilities and `npm run build` and `npm run lint` passed.
 
-## Automation
+## Maintenance
 
-[`.github/dependabot.yml`](../.github/dependabot.yml) runs a weekly npm check and groups production, development and major updates so the repo receives a handful of pull requests instead of one per transitive bump. There are no GitHub Actions workflows and no deployment target; the app is served from `npm run dev` or from the static `dist/` output of `npm run build`.
+Dependencies are updated by hand; there is no Dependabot version-update config. There are no GitHub Actions workflows and no deployment target; the app is served from `npm run dev` or from the static `dist/` output of `npm run build`.
 
 ## Held-back majors
 
@@ -29,4 +29,4 @@ Transitive packages are pinned with npm [`overrides`](https://docs.npmjs.com/cli
 | --- | --- | --- |
 | `typescript` | `^6.0.2` | `typescript-eslint` 8.69.0 declares `peerDependencies.typescript: ">=4.8.4 <6.1.0"` and throws `typescript-eslint does not support TS 7.0.` at import time, so `npm run lint` hard-fails on TypeScript 7 (`tsc -b` and `vite build` themselves pass). Tracked upstream at [typescript-eslint#10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940). |
 
-The TypeScript major is suppressed with an `ignore` entry in `.github/dependabot.yml`; remove it once typescript-eslint ships TS 7 support.
+Keep TypeScript on 6.x until typescript-eslint ships TS 7 support.
